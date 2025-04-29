@@ -1,0 +1,55 @@
+Central Intake Guide
+1. Receive a phone call from the intake number
+2. Explain the role of RSLLLC Veteran Services and the services we provide
+3. Check if the client already has a contact in the CRM
+a. For existing clients, open their contact card and confirm their details
+b. For new clients, create a new contact card
+4. When creating a contact card, it must contain all of the following:
+a. Contact Information:
+i. First Name
+ii. Last Name
+iii. Email
+iv. Gender
+v. Date of Birth
+vi. Mobile Phone
+vii. Aboriginal/Terroes Strait Islander
+viii. Address
+b. Contact Type. Select one or more from the list (client, bequestor, donor, relative, representative, volunteer, veteran, family)
+c. Service:
+i. Status
+ii. Service
+iii. Enlistment
+iv. Discharge Date
+v. Role
+vi. Deployment Summary
+vii. Discharge
+d. Personal
+i. Marital Status
+ii. Spouse/Partner Name
+iii. Children or dependents
+iv. Are children living with you
+v. Culturally and Linguistically Diverse
+e. PMKeys number
+f. Service Card and Pension
+g. DVA Number
+5. While still on the phone with the contact, go to the ‘Central Intake’ tab and scroll down to ‘Applicate for Assistance Submissions’
+6. Create a New Application:
+a. In the ‘Application Summary’ tab, set the Application Status to Completed
+b. Fill out all relevant fields in the ‘Section B – Assistance Required’ tab
+c. Complete ‘Section G – Privacy and Consent’
+i. Read the information on the screen to them. If the client asks for the privacy and consent form to be emailed to them, they are required to respond via email advising that they have read it and agree/disagree
+d. Click Save and Close
+7. On the ‘Summary’ tab, create a new phone call by clicking the + at the top of the Timeline section. Fill out the details of the phone call:
+a. Subject: format as ‘First Name, Last Name, Intake Assessment, DDMMYYYY
+b. Set the direction of call (Outgoing or Incoming)
+c. Check that the correct people involved with the call are recorded
+d. Fill out a summary of the call in the Description field:
+i. Date and Time of appointment
+ii. Location and Type of appointment
+iii. Participants
+iv. Summary of intervention
+v. Outcome/plan
+vi. Escalation required
+e. Ensure regarding is set as the client
+f. Duration
+8. Save and Mark as Complete
