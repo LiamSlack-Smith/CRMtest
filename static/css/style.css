@@ -31,10 +31,8 @@
     --menu-button-hover-bg: rgba(255, 255, 255, 0.08);
     --menu-button-active-bg: var(--accent-color);
     --menu-button-text-color: var(--text-color);
-    --menu-button-active-text-color: var(--button-text-color);
-    --crm-card-bg: var(--secondary-bg); /* Used by crm.css */
-    --crm-card-border: var(--border-color); /* Used by crm.css */
-    --crm-header-bg: var(--bg-color); /* Used by crm.css */
+    --menu-button-active-text_color: var(--button-text-color);
+    /* REMOVED CRM specific theme keys */
     /* Viewer specific defaults (Used by chat.css) */
     --viewer-html-bg: #f8f9fa;
     --viewer-html-text: #212529;
@@ -109,6 +107,15 @@ body {
     margin: 0 0 12px 0;
     font-weight: 600;
 }
+/* New subsection title style */
+.menu-subsection-title {
+    font-size: 0.8em; /* Slightly smaller */
+    color: var(--muted-text-color);
+    margin-top: 15px; /* Add space above */
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
 
 /* Navigation Buttons */
 .menu-nav-button {
@@ -133,6 +140,65 @@ body {
     background-color: var(--menu-button-active-bg);
     color: var(--menu-button-active-text-color);
     font-weight: 500;
+}
+
+/* Menu Select (Dropdown) */
+.menu-select {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 1em;
+    cursor: pointer;
+    appearance: none; /* Remove default dropdown arrow */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23abb2bf' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 16px 12px;
+    padding-right: 2.5rem; /* Make space for the custom arrow */
+    box-sizing: border-box;
+}
+.menu-select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px var(--accent-color);
+}
+
+/* Profile Guides List */
+#profile-guides-list-container {
+    margin-top: 10px; /* Space below dropdown */
+}
+#profile-guides-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 150px; /* Limit height and allow scroll if needed */
+    overflow-y: auto;
+    font-size: 0.9em;
+}
+#profile-guides-list li {
+    padding: 4px 0;
+    color: var(--menu-text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#profile-guides-list li.muted {
+    color: var(--muted-text-color);
+    font-style: italic;
+}
+.profile-guide-link {
+    color: var(--link-color);
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+.profile-guide-link:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
 }
 
 

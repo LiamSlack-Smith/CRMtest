@@ -10,18 +10,14 @@ import re
 import time
 import datetime
 import functools
-# Removed threading import - now in crm_logic
+# Removed crm_logic imports and threading
 from flask import Flask, request, jsonify, render_template, abort, Response, stream_with_context
 from werkzeug.utils import secure_filename
 
-# --- Import CRM Logic ---
-import crm_logic
-from crm_logic import NotFoundError, ValidationError, ConflictError, StorageError # Import custom exceptions
+# --- REMOVED CRM Logic Imports ---
+# Removed custom exceptions related to CRM
 
-# --- REMOVED Model Imports ---
-# from models import Base, Contact, SupportItem, Case, SupportItemCategory, create_tables
-
-import ollama
+import ollama # Keep ollama check for now, though unused
 import mammoth
 
 # --- Google GenAI Imports & Setup ---
@@ -55,12 +51,13 @@ except ImportError:
 
 # --- Configuration ---
 GUIDES_DIR = "guides"
-GEMINI_MODEL_NAME = 'gemini-2.5-flash-preview-04-17'
+GEMINI_MODEL_NAME = 'gemini-2.5-flash-preview-04-17' # Or a model known to support streaming well
 THEMES_FILE = "themes.yaml"
+PROFILES_FILE = "profiles.yaml" # New profiles file
 SUPPORT_LOG_FILE = "support_requests.log"
 EMBEDDING_MODEL_NAME = 'text-embedding-004' # NEW: Embedding model name
 
-# CRM_DATA_FILE is now managed within crm_logic.py
+# REMOVED CRM_DATA_FILE
 
 # --- Global Theme Data & Loading ---
 THEMES_DATA = {}
@@ -73,13 +70,13 @@ THEME_COLOR_KEYS = [
     'user-msg-bg', 'assistant-msg-bg', 'message-text-color', 'message-border-color',
     'scrollbar-track-color', 'scrollbar-thumb-color',
     'menu-text-color', 'menu-hover-bg', 'menu-button-bg', 'menu-button-hover-bg',
-    'menu-button-active-bg', 'menu-button-text-color', 'menu-button-active-text-color', # Corrected typo
-    'crm-card-bg', 'crm-card-border', 'crm-header-bg',
+    'menu-button-active-bg', 'menu-button-text-color', 'menu-button-active_text_color',
+    # Removed CRM specific theme keys
     'viewer-html-bg', 'viewer-html-text', 'viewer-html-heading',
     'viewer-html-para', 'viewer-html-code-bg', 'viewer-html-code-text'
 ]
 HARDCODED_FALLBACK_THEME = {
-    'default': { 'name': "Default Dark (Fallback)", 'bg-color': "#1a1d24", 'secondary_bg': "#282c34", 'gradient_bg_start': "#1a1d24", 'gradient_bg_end': "#282c34", 'gradient_direction': "to bottom right", 'text_color': "#abb2bf", 'heading_color': "#ffffff", 'muted_text_color': "#5c6370", 'accent_color': "#61afef", 'accent_hover': "#528bce", 'link_color': "#61afef", 'error_color': "#e06c75", 'border_color': "#3b4048", 'input_bg': "#21252b", 'button_text_color': "#ffffff", 'user_msg_bg': "#0a3d62", 'assistant_msg_bg': "#3a3f4b", 'message_text_color': "#dcdfe4", 'message_border_color': "transparent", 'scrollbar_track_color': "#21252b", 'scrollbar_thumb_color': "#4b5263", 'menu_text_color': "#abb2bf", 'menu_hover_bg': "rgba(97, 175, 239, 0.1)", 'menu_button_bg': "transparent", 'menu_button_hover_bg': "rgba(255, 255, 255, 0.08)", 'menu_button_active_bg': "#61afef", 'menu_button_text_color': "#abb2bf", 'menu_button_active_text_color': "#ffffff", 'crm_card_bg': "#282c34", 'crm_card_border': "#3b4048", 'crm_header_bg': "#1a1d24", 'viewer_html_bg': "#f8f9fa", 'viewer_html_text': "#212529", 'viewer_html_heading': "#111", 'viewer_html_para': "#343a40", 'viewer_html_code_bg': "#e9ecef", 'viewer_html_code_text': "#333" }
+    'default': { 'name': "Default Dark (Fallback)", 'bg-color': "#1a1d24", 'secondary_bg': "#282c34", 'gradient_bg_start': "#1a1d24", 'gradient_bg_end': "#282c34", 'gradient_direction': "to bottom right", 'text_color': "#abb2bf", 'heading_color': "#ffffff", 'muted_text_color': "#5c6370", 'accent_color': "#61afef", 'accent_hover': "#528bce", 'link_color': "#61afef", 'error_color': "#e06c75", 'border_color': "#3b4048", 'input_bg': "#21252b", 'button_text_color': "#ffffff", 'user_msg_bg': "#0a3d62", 'assistant_msg_bg': "#3a3f4b", 'message_text_color': "#dcdfe4", 'message_border_color': "transparent", 'scrollbar_track_color': "#21252b", 'scrollbar_thumb_color': "#4b5263", 'menu_text_color': "#abb2bf", 'menu_hover_bg': "rgba(97, 175, 239, 0.1)", 'menu_button_bg': "transparent", 'menu_button_hover_bg': "rgba(255, 255, 255, 0.08)", 'menu_button_active_bg': "#61afef", 'menu_button_text_color': "#abb2bf", 'menu_button_active_text_color': "#ffffff", 'viewer_html_bg': "#f8f9fa", 'viewer_html_text': "#212529", 'viewer_html_heading': "#111", 'viewer_html_para': "#343a40", 'viewer_html_code_bg': "#e9ecef", 'viewer_html_code_text': "#333" }
 }
 
 def load_themes():
@@ -103,6 +100,56 @@ def load_themes():
         DEFAULT_THEME_NAME = list(THEMES_DATA.keys())[0]
 load_themes()
 
+# --- Global Profile Data & Loading ---
+PROFILES_DATA = {}
+DEFAULT_PROFILE_KEY = 'default'
+
+def load_profiles():
+    global PROFILES_DATA, DEFAULT_PROFILE_KEY
+    try:
+        with open(PROFILES_FILE, 'r', encoding='utf-8') as f:
+            loaded_data = yaml.safe_load(f)
+        if not isinstance(loaded_data, dict) or 'profiles' not in loaded_data or not isinstance(loaded_data['profiles'], dict):
+            raise ValueError("Invalid structure in profiles.yaml. Expected top-level 'profiles' dictionary.")
+
+        profiles = loaded_data['profiles']
+        if DEFAULT_PROFILE_KEY not in profiles:
+            first_key = next(iter(profiles), None)
+            if not first_key:
+                raise ValueError("No profiles defined in profiles.yaml")
+            logging.warning(f"Default profile key '{DEFAULT_PROFILE_KEY}' not found in profiles.yaml. Using '{first_key}'.")
+            DEFAULT_PROFILE_KEY = first_key
+
+        # Validate profile structure (basic check)
+        valid_profiles = {}
+        for key, profile in profiles.items():
+            if not isinstance(profile, dict) or 'name' not in profile or 'system_prompt' not in profile or 'available_guides' not in profile:
+                 logging.warning(f"Profile '{key}' in profiles.yaml has invalid structure. Skipping.")
+                 continue
+            if not isinstance(profile['name'], str) or not isinstance(profile['system_prompt'], str) or not isinstance(profile['available_guides'], list):
+                 logging.warning(f"Profile '{key}' in profiles.yaml has invalid field types. Skipping.")
+                 continue
+            valid_profiles[key] = profile # Add valid profile
+
+
+        PROFILES_DATA = valid_profiles
+        logging.info(f"Loaded {len(PROFILES_DATA)} profiles. Default: '{DEFAULT_PROFILE_KEY}'")
+
+    except (FileNotFoundError, ValueError, yaml.YAMLError) as e:
+        logging.error(f"Error loading profiles file '{PROFILES_FILE}': {e}. Using hardcoded default profile.", exc_info=True)
+        # Define a basic default profile if loading fails
+        PROFILES_DATA = {
+            'default': {
+                'name': "General Assistant (Fallback)",
+                'system_prompt': "You are a helpful AI assistant. Answer questions based on provided context.",
+                'available_guides': [] # All guides
+            }
+        }
+        DEFAULT_PROFILE_KEY = 'default'
+
+load_profiles()
+
+
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -112,8 +159,12 @@ app = Flask(__name__)
 # --- RAG Data Storage (In-Memory) ---
 # Structure: [{"text": "chunk text", "source": "filename", "embedding": [...float values...]}]
 document_chunks = []
+# Store a mapping of filename to its loaded status/error during embedding
+loaded_guide_info = {}
+
 
 # --- Helper Function for Gemini Calls with Retry ---
+# CORRECTED: Use generate_content_stream for streaming calls
 def generate_with_retry(client, model_name, contents, config=None, stream=False, max_retries=3, initial_delay=1):
     """Calls Google GenAI generate_content or embed_content with retry logic."""
     if client is None:
@@ -130,13 +181,16 @@ def generate_with_retry(client, model_name, contents, config=None, stream=False,
             kwargs = {
                 'model': model_name,
                 'contents': contents,
-                'config': config
             }
+            # Only add config if it's not None
+            if config:
+                 kwargs['config'] = config
+
 
             # Call the appropriate method based on whether streaming is requested
             if stream:
-                # Use generate_content for streaming text responses
-                response = client.models.generate_content(**kwargs, stream=True)
+                # CORRECTED: Use generate_content_stream for streaming
+                response = client.models.generate_content_stream(**kwargs)
             elif model_name == EMBEDDING_MODEL_NAME:
                  # Use embed_content for embeddings
                  response = client.models.embed_content(**kwargs)
@@ -260,8 +314,9 @@ def chunk_text(text, source_filename, max_chars=1000):
 
 async def load_and_embed_guides():
     """Loads text from guide files, chunks them, and generates embeddings."""
-    global document_chunks
+    global document_chunks, loaded_guide_info
     document_chunks = []
+    loaded_guide_info = {} # Reset info on reload
 
     if google_genai_client is None:
         logging.warning("Google GenAI client not available. Skipping guide embedding.")
@@ -280,7 +335,9 @@ async def load_and_embed_guides():
     embedded_count = 0
     for filename in files:
         safe_path = get_safe_filepath(filename)
-        if not safe_path: continue
+        if not safe_path:
+            loaded_guide_info[filename] = {"status": "skipped", "reason": "Invalid path or temporary file"}
+            continue
 
         content = None
         try:
@@ -293,6 +350,7 @@ async def load_and_embed_guides():
                      with open(safe_path, 'r', encoding='cp1252', errors='ignore') as f: content = f.read()
         except Exception as e:
             logging.error(f"Error reading file '{filename}' for embedding: {e}", exc_info=True)
+            loaded_guide_info[filename] = {"status": "error", "reason": f"Read error: {e}"}
             continue
 
         if content and content.strip():
@@ -300,18 +358,17 @@ async def load_and_embed_guides():
             logging.info(f"Chunked '{filename}' into {len(chunks)} chunks.")
             chunk_texts = [chunk["text"] for chunk in chunks]
             try:
+                # Updated: Use types.Content directly for batching
+                content_list = [types.Content(parts=[types.Part(text=text)]) for text in chunk_texts]
                 embedding_config = types.EmbedContentConfig(task_type="retrieval_document")
+
                 embed_response = generate_with_retry(
                     client=google_genai_client,
                     model_name=EMBEDDING_MODEL_NAME,
-                    contents=chunk_texts,
+                    contents=content_list, # Pass the list of Content objects
                     config=embedding_config,
                     stream=False # Embedding is not streamed
                 )
-
-                print(embed_response)
-                print(embed_response.embeddings)
-                print(embed_response.embeddings[0])
 
                 # --- CORRECTED EMBEDDING EXTRACTION for BATCH ---
                 if embed_response and hasattr(embed_response, 'embeddings') and embed_response.embeddings and len(embed_response.embeddings) == len(chunks):
@@ -326,16 +383,27 @@ async def load_and_embed_guides():
                             logging.warning(f"Chunk {i+1} from '{filename}' did not contain embedding values.")
                     if successful_chunk_embeddings > 0:
                         embedded_count += 1
+                        loaded_guide_info[filename] = {"status": "success", "chunk_count": successful_chunk_embeddings}
                         logging.info(f"Successfully processed embeddings for {successful_chunk_embeddings}/{len(chunks)} chunks from '{filename}'.")
+                    else:
+                         loaded_guide_info[filename] = {"status": "warning", "reason": "No embeddings generated for any chunks"}
+                         logging.warning(f"No embeddings generated for any chunks from '{filename}'.")
                 # --- END CORRECTION ---
                 else:
+                    loaded_guide_info[filename] = {"status": "warning", "reason": "Embedding response had unexpected structure or count"}
                     logging.warning(f"Embedding response for '{filename}' had unexpected structure or count: {embed_response}")
 
             except (ConnectionError, Exception) as e:
                 logging.error(f"Error generating embeddings for '{filename}' (retries exhausted?): {e}", exc_info=True)
+                loaded_guide_info[filename] = {"status": "error", "reason": f"Embedding error: {e}"}
 
-    print(embedded_count)
+        else:
+            logging.warning(f"Skipping empty or whitespace-only file: '{filename}'.")
+            loaded_guide_info[filename] = {"status": "skipped", "reason": "Empty content"}
+
+
     logging.info(f"Finished embedding guides. Total files processed: {total_files}, files with >=1 chunk embedded: {embedded_count}, total chunks embedded: {len(document_chunks)}.")
+    logging.debug(f"Guide loading summary: {loaded_guide_info}")
 
 
 # --- Similarity Search Function ---
@@ -348,13 +416,27 @@ def cosine_similarity(vec1, vec2):
         return 0.0
     return dot_product / (magnitude1 * magnitude2)
 
-def find_relevant_chunks(query_embedding, top_k=5):
-    """Finds the top_k most similar chunks to the query embedding."""
+def find_relevant_chunks(query_embedding, top_k=5, allowed_guides=None):
+    """Finds the top_k most similar chunks to the query embedding,
+       optionally filtering by allowed guide filenames."""
     if not query_embedding or not document_chunks:
         return []
 
+    # Filter chunks based on allowed_guides if the list is not empty
+    if allowed_guides is not None and len(allowed_guides) > 0:
+        filterable_chunks = [
+            chunk for chunk in document_chunks
+            if chunk.get("source") in allowed_guides
+        ]
+        logging.debug(f"Filtered RAG search to {len(filterable_chunks)} chunks based on allowed guides.")
+    else:
+        # If allowed_guides is None or empty, use all chunks
+        filterable_chunks = document_chunks
+        logging.debug("RAG search using all available chunks.")
+
+
     similarities = []
-    for chunk in document_chunks:
+    for chunk in filterable_chunks:
         if "embedding" in chunk and chunk["embedding"]:
             similarity = cosine_similarity(query_embedding, chunk["embedding"])
             similarities.append((similarity, chunk))
@@ -367,13 +449,14 @@ def find_relevant_chunks(query_embedding, top_k=5):
 
 
 # --- Tool Definitions and Prompts ---
-# ... (construct_gemini_tool_selection_prompt - will still include read_files, but it triggers RAG now) ...
+# No changes needed in prompts
 def construct_gemini_tool_selection_prompt(query):
     available_files_str = "None"
     try:
         if os.path.isdir(GUIDES_DIR):
-            files = [f for f in os.listdir(GUIDES_DIR) if os.path.isfile(os.path.join(GUIDES_DIR, f)) and not f.startswith('~$')]
-            if files: available_files_str = ", ".join([f"`{f}`" for f in files])
+            # Use loaded_guide_info keys for the list of available files
+            available_files = [fname for fname, info in loaded_guide_info.items() if info.get('status') != 'error']
+            if available_files: available_files_str = ", ".join([f"`{f}`" for f in available_files])
         else: logging.warning(f"Guides directory '{GUIDES_DIR}' not found."); available_files_str = "(Guides directory not found)"
     except Exception as e: logging.error(f"Error listing files in {GUIDES_DIR}: {e}"); available_files_str = "(Error listing files)"
 
@@ -412,7 +495,7 @@ Available Tools:
     }}
     ```
 
-4.  **`request_support`**: Use this tool ONLY if the user is explicitly asking for help *with the application itself*, reporting a bug, requesting a feature, or indicating they are stuck due to a technical problem (e.g., "the save button isn't working", "I need help logging in", "can you add X feature?", "getting an error message"). Do NOT use this for questions about *how to use* the CRM features (use `read_files` or `answer_question` for those). Capture the user's description of the issue.
+4.  **`request_support`**: Use this tool ONLY if the user is explicitly asking for help *with the application itself*, reporting a bug, requesting a feature, or indicating they are stuck due to a technical problem (e.g., "the save button isn't working", "I need help logging in", "can you add X feature?", "getting an error message"). Do NOT use this for questions about *how to use* the application features (use `read_files` or `answer_question` for those). Capture the user's description of the issue.
     Schema:
     ```json
     {{
@@ -426,7 +509,7 @@ Available Tools:
 **Analysis Steps:**
 1. Analyze the user's query: `{query}`
 2. Determine the user's intent: Answer question needing file info? Answer general question? Create theme? Request technical support/report issue?
-3. **Prioritize `read_files`:** If the question asks about CRM procedures, specific functionalities, how-tos, or mentions topics likely covered in guides, choose `read_files` and identify relevant filename(s).
+3. **Prioritize `read_files`:** If the question asks about procedures, specific functionalities, how-tos, or mentions topics likely covered in guides, choose `read_files` and identify relevant filename(s).
 4. If the intent is clearly theme creation, choose `create_theme`.
 5. **If the intent is clearly a request for technical help with the application or reporting an issue/bug**, choose `request_support` and extract the description of the problem into `request_description`.
 6. If the question is general conversation OR no available files seem relevant AND it's not a support request, choose `answer_question`.
@@ -441,49 +524,43 @@ Available Tools:
 """
     return prompt
 
-# ... (construct_google_answer_prompt - unchanged, still asks for JSON answer/sources) ...
-def construct_google_answer_prompt(query, file_content_map):
-    """Constructs the prompt for Google GenAI to generate the answer AS JSON,
-       including cited sources."""
+# CORRECTED: construct_google_answer_prompt now takes system_prompt as an argument
+# REINFORCED: Added explicit Markdown formatting instruction back into the main prompt body
+def construct_google_answer_prompt(query, file_content_map, system_prompt):
+    """Constructs the prompt for Google GenAI to generate the answer (now expects streamed text, not JSON).
+       Includes cited sources IN THE PROMPT, not expecting them back in JSON."""
 
     context_str = "No specific file content was provided or read for this query."
     filenames_provided = list(file_content_map.keys())
     if file_content_map:
         context_parts = []
-        for filename, content in file_content_map.items():
+        # Use the generic key from the RAG result
+        context_key = next(iter(file_content_map), None)
+        if context_key:
+            content = file_content_map[context_key]
             max_len = 10000 # Limit context length per file
             truncated_content = content[:max_len] + ("..." if len(content) > max_len else "")
-            context_parts.append(f"--- START OF FILE: {filename} ---\n{truncated_content}\n--- END OF FILE: {filename} ---")
+            context_parts.append(f"--- START OF RELEVANT CONTEXT ---\n{truncated_content}\n--- END OF RELEVANT CONTEXT ---")
         context_str = "\n\n".join(context_parts)
 
     prompt = f"""
-You are a helpful assistant expert in our company's CRM. Your task is to answer the user's question based *only* on the provided information (if any).
+{system_prompt}
 
-**IMPORTANT:** You MUST respond ONLY with a valid JSON object containing two keys: "answer" and "sources". Do NOT add any text before or after the JSON object.
-
-1.  **Analyze the User Question:** `{query}`
-2.  **Review Provided Information:** Examine the file content provided below under "Retrieved Information".
-3.  **Construct the Answer:** Generate a detailed answer to the user's question based *solely* on the provided file content. If no specific file content was provided or relevant, answer based on general CRM knowledge or state that specific information is unavailable in the provided context. Format the answer text itself using Markdown (e.g., headings, lists, bold, inline code ``field_name``).
-4.  **Identify Sources:** Determine which of the provided files (listed in "Retrieved Information") you *actually used* information from to construct your answer.
-5.  **Format the Output:** Create a JSON object like this:
-    ```json
-    {{
-      "answer": "Markdown formatted answer text here...",
-      "sources": ["filename1.ext", "filename_used.ext"] // List ONLY the filenames from 'Retrieved Information' that were necessary for the answer. If none were used or no files provided, use an empty list [].
-    }}
-    ```
-    **Crucial Formatting Rule:** Inside the value for the "answer" key, any double quote characters (") **must** be escaped with a backslash (\\"). For example, if the answer contains the phrase 'set status to "Closed"', the JSON value should be "set status to \\"Closed\\"". Also escape other necessary JSON characters like backslashes (\\\\).
-
-Retrieved Information (File Content):
+Retrieved Information (Context):
 {context_str}
 
 User Question: {query}
 
-JSON Response (containing 'answer' and 'sources' keys ONLY):
+Instructions for Answer:
+- Answer the user's question based *only* on the provided context above.
+- If the context doesn't contain the answer, state that the information is unavailable based on the provided documents.
+- **Format the entire answer using Markdown** (e.g., use headings, lists, bold text, inline markdown and any other markdown where appropriate). Ensure that the markdown is extensive and professional.
+- Respond directly with the answer text. Do not include introductory phrases like "Here is the answer:" unless it flows naturally.
+
+Answer (Markdown Formatted Text Only):
 """
     return prompt
 
-# ... (construct_google_theme_generation_prompt - unchanged) ...
 def construct_google_theme_generation_prompt(user_query):
     """Constructs the prompt for Google GenAI to generate theme JSON."""
     theme_keys_string = ", ".join([f"`{key}`" for key in THEME_COLOR_KEYS])
@@ -573,10 +650,13 @@ def handle_create_theme(arguments):
         return {"status": "success", "message": f"Theme '{theme_name}' created!", "new_theme_key": theme_key, "themes": THEMES_DATA}
     except Exception as e:
         logging.error(f"Failed to write theme: {e}", exc_info=True)
+        # Use a generic error type here if StorageError was removed
         return {"status": "error", "message": "Failed to save the new theme."}
 
 def handle_read_files(arguments):
-    """Reads content of requested files using get_safe_filepath."""
+    """Reads content of requested files using get_safe_filepath. (Used for RAG context)."""
+    # This function remains as it's needed by the RAG flow, even though the LLM
+    # doesn't directly "read" files in the old sense. It identifies files for RAG.
     if not isinstance(arguments, dict):
         return None, {"error": "Invalid arguments format for read_files."}, []
 
@@ -584,57 +664,24 @@ def handle_read_files(arguments):
     if not filenames or not isinstance(filenames, list):
         return None, {"error": "Missing or invalid 'filenames' list for read_files."}, []
 
-    read_content = {}
+    # The RAG implementation now handles the actual reading and embedding.
+    # This function, when called by the LLM tool selection, now primarily serves
+    # as a signal that RAG should be attempted, possibly using these filenames
+    # as a hint (though the current RAG uses similarity search on the query).
+    # We'll return an empty content map but log the filenames.
+    logging.info(f"LLM suggested reading files (for RAG context): {filenames}")
     errors = []
-    read_files_list = [] # Keep track of files successfully read
-
+    valid_filenames_for_rag_hint = []
     for fname in filenames:
-        if not isinstance(fname, str):
-            errors.append(f"Invalid filename type: {type(fname)}")
-            continue
+        if isinstance(fname, str):
+            valid_filenames_for_rag_hint.append(fname)
+        else:
+             errors.append(f"Invalid filename type: {type(fname)}")
 
-        logging.debug(f"Attempting to process file request from LLM: '{fname}'")
-        safe_path = get_safe_filepath(fname)
+    # Return empty content, no errors (unless filename type was wrong),
+    # and the list of filenames the LLM thought were relevant.
+    return {}, {"errors": errors} if errors else None, valid_filenames_for_rag_hint
 
-        if not safe_path:
-            errors.append(f"File not processed or invalid: '{fname}'")
-            continue
-
-        actual_filename = os.path.basename(safe_path)
-        content = None
-        logging.info(f"Reading validated file: {safe_path}")
-        try:
-            if actual_filename.lower().endswith('.docx'):
-                 with open(safe_path, "rb") as docx_file:
-                     result = mammoth.extract_raw_text(docx_file)
-                     content = result.value
-                     if result.messages: logging.warning(f"Mammoth messages for '{actual_filename}': {result.messages}")
-                     logging.debug(f"Successfully extracted text from DOCX: {actual_filename}")
-            else: # Plain text (txt, md)
-                 try:
-                     with open(safe_path, 'r', encoding='utf-8') as f: content = f.read()
-                     logging.debug(f"Read '{actual_filename}' with utf-8.")
-                 except UnicodeDecodeError:
-                     logging.warning(f"UTF-8 decode failed for '{actual_filename}', trying cp1252.")
-                     with open(safe_path, 'r', encoding='cp1252', errors='ignore') as f: content = f.read()
-                     logging.debug(f"Read '{actual_filename}' with cp1252.")
-
-            if content is not None and content.strip():
-                read_content[actual_filename] = content
-                read_files_list.append(actual_filename)
-                logging.info(f"Successfully read and stored content from: {actual_filename}")
-            else:
-                 errors.append(f"Extracted empty content from '{actual_filename}'.")
-                 logging.warning(f"Extracted empty or whitespace-only content from '{actual_filename}'.")
-
-        except FileNotFoundError:
-             logging.error(f"FileNotFoundError trying to read validated path: {safe_path}")
-             errors.append(f"Could not find file '{actual_filename}' during read attempt.")
-        except Exception as e:
-            logging.error(f"Error reading file content from '{safe_path}': {e}", exc_info=True)
-            errors.append(f"Error reading content of '{actual_filename}'.")
-
-    return read_content, {"errors": errors} if errors else None, read_files_list
 
 def handle_request_support(arguments):
     """Logs the user's support request to a file."""
@@ -661,6 +708,7 @@ def handle_request_support(arguments):
         }
     except IOError as e:
         logging.error(f"Failed to write to support log file '{SUPPORT_LOG_FILE}': {e}", exc_info=True)
+        # Use generic error if StorageError removed
         return {"status": "error", "message": "Sorry, there was an internal error logging your support request."}
     except Exception as e:
         logging.error(f"Unexpected error handling support request: {e}", exc_info=True)
@@ -671,9 +719,18 @@ def handle_request_support(arguments):
 
 @app.route('/')
 def index():
-    """Serves the main HTML page, passing theme data."""
+    """Serves the main HTML page, passing theme, profile, and guide data."""
     themes_json = json.dumps(THEMES_DATA)
-    return render_template('index.html', themes_json=themes_json, default_theme_name=DEFAULT_THEME_NAME)
+    profiles_json = json.dumps(PROFILES_DATA) # Pass profiles data
+    # Get list of successfully processed guide filenames
+    all_guides_list = sorted([fname for fname, info in loaded_guide_info.items() if info.get('status') == 'success'])
+    all_guides_json = json.dumps(all_guides_list)
+    return render_template('index.html',
+                           themes_json=themes_json,
+                           default_theme_name=DEFAULT_THEME_NAME,
+                           profiles_json=profiles_json,
+                           default_profile_key=DEFAULT_PROFILE_KEY,
+                           all_guides_json=all_guides_json) # Pass all guides
 
 @app.route('/get_guide_content')
 def get_guide_content():
@@ -727,9 +784,20 @@ def handle_ask():
         return jsonify({"error": "Request must be JSON"}), 400
     data = request.get_json()
     query = data.get('query')
+    profile_key = data.get('profile_key', DEFAULT_PROFILE_KEY) # Get selected profile key
+
     if not query or not isinstance(query, str) or not query.strip():
         return jsonify({"error": "Missing/invalid 'query'"}), 400
     query = query.strip()
+
+    # Get the selected profile data
+    selected_profile = PROFILES_DATA.get(profile_key, PROFILES_DATA.get(DEFAULT_PROFILE_KEY))
+    if not selected_profile:
+         logging.error(f"Selected profile key '{profile_key}' not found and default '{DEFAULT_PROFILE_KEY}' is also missing.")
+         return jsonify({"error": "Selected AI profile not found."}), 500
+
+    profile_system_prompt = selected_profile.get('system_prompt', PROFILES_DATA[DEFAULT_PROFILE_KEY]['system_prompt'])
+    profile_allowed_guides = selected_profile.get('available_guides', []) # Use empty list if not specified
 
     if google_genai_client is None or types is None:
         logging.error("Google GenAI client not initialized. Cannot proceed.")
@@ -737,48 +805,90 @@ def handle_ask():
 
     try:
         # 1. Tool Selection (Gemini still decides the high-level intent)
+        # Tool selection prompt is general, not profile-specific
         tool_selection_prompt = construct_gemini_tool_selection_prompt(query)
         logging.info(f"Asking Gemini model '{GEMINI_MODEL_NAME}' to choose a tool...")
         llm_content = None; tool_name_decision = "answer_question"; tool_arguments = {}
         try:
-            tool_select_config = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0) if GEMINI_MODEL_NAME == "gemini-2.5-flash-preview-04-17" else None)
-            google_response = generate_with_retry(client=google_genai_client, model_name=GEMINI_MODEL_NAME, contents=[{"role": "user", "parts": [{"text": tool_selection_prompt}]}], config=tool_select_config, stream=False)
-            if google_response.candidates and google_response.candidates[0].content and google_response.candidates[0].content.parts: llm_content = google_response.candidates[0].content.parts[0].text
-            elif hasattr(google_response, 'text'): llm_content = google_response.text
-            else: raise ValueError("Gemini tool selection returned no usable content.")
-            if not llm_content: raise ValueError("Gemini tool selection returned empty content.")
+            # Use a non-streaming call for tool selection
+            tool_select_config = types.GenerateContentConfig(
+                # Ensure JSON output for tool selection if model supports it
+                 response_mime_type="application/json",
+                 thinking_config=types.ThinkingConfig(thinking_budget=0) if GEMINI_MODEL_NAME == "gemini-2.5-flash-preview-04-17" else None
+            )
+            # CORRECTED: Use generate_content for non-streaming tool selection
+            google_response = generate_with_retry(
+                client=google_genai_client,
+                model_name=GEMINI_MODEL_NAME,
+                contents=[{"role": "user", "parts": [{"text": tool_selection_prompt}]}],
+                config=tool_select_config,
+                stream=False # Tool selection is NOT streamed
+            )
+
+            if google_response.candidates and google_response.candidates[0].content and google_response.candidates[0].content.parts:
+                llm_content = google_response.candidates[0].content.parts[0].text
+            # Handle potential direct text response if parts structure isn't as expected
+            elif hasattr(google_response, 'text'):
+                 llm_content = google_response.text
+            else:
+                raise ValueError("Gemini tool selection returned no usable content.")
+
+            if not llm_content:
+                raise ValueError("Gemini tool selection returned empty content.")
+
             logging.debug(f"Gemini raw tool selection response: {llm_content}")
-            cleaned_content = llm_content.strip()
-            if cleaned_content.startswith("```json"): cleaned_content = cleaned_content[7:-3].strip()
-            elif cleaned_content.startswith("```"): cleaned_content = cleaned_content[3:-3].strip()
-            tool_call_data = json.loads(cleaned_content)
-            if isinstance(tool_call_data, dict) and "tool" in tool_call_data: tool_name_decision = tool_call_data.get("tool"); tool_arguments = tool_call_data.get("arguments", {})
-            else: logging.warning(f"Gemini JSON missing 'tool' or invalid format. Raw: {llm_content}. Assuming 'answer_question'."); tool_name_decision = "answer_question"; tool_arguments = {}
+            # Attempt to parse JSON directly (assuming response_mime_type worked)
+            tool_call_data = json.loads(llm_content)
+
+            if isinstance(tool_call_data, dict) and "tool" in tool_call_data:
+                tool_name_decision = tool_call_data.get("tool")
+                tool_arguments = tool_call_data.get("arguments", {})
+            else:
+                logging.warning(f"Gemini JSON missing 'tool' or invalid format. Raw: {llm_content}. Assuming 'answer_question'.")
+                tool_name_decision = "answer_question"
+                tool_arguments = {}
         except (json.JSONDecodeError, ValueError, ConnectionError, Exception) as e:
             logging.error(f"Error calling/parsing Gemini tool selection (retries exhausted?): {e}. Raw response: '{llm_content if llm_content else 'N/A'}'", exc_info=True)
-            logging.warning("Gemini tool selection failed/invalid. Defaulting to 'answer_question'."); tool_name_decision = "answer_question"; tool_arguments = {}
+            logging.warning("Gemini tool selection failed/invalid. Defaulting to 'answer_question'.")
+            tool_name_decision = "answer_question"
+            tool_arguments = {}
 
 
         # 2. Execute based on tool decision
-        answer_markdown = None; ai_cited_sources = []; should_stream_answer = False; file_read_errors_for_stream = None
-        common_gen_config = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0) if GEMINI_MODEL_NAME == "gemini-2.5-flash-preview-04-17" else None)
+        # ai_cited_sources will store sources identified during RAG
+        ai_cited_sources = []
+        should_stream_answer = False
 
         if tool_name_decision == "create_theme":
             logging.info("Gemini chose create_theme. Asking Gemini to generate theme details...")
             theme_gen_prompt = construct_google_theme_generation_prompt(query)
             try:
-                google_response = generate_with_retry(client=google_genai_client, model_name=GEMINI_MODEL_NAME, contents=[{"role": "user", "parts": [{"text": theme_gen_prompt}]}], config=common_gen_config, stream=False)
+                # Ensure JSON output for theme generation
+                theme_gen_config = types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    thinking_config=types.ThinkingConfig(thinking_budget=0) if GEMINI_MODEL_NAME == "gemini-2.5-flash-preview-04-17" else None
+                )
+                # CORRECTED: Use generate_content for non-streaming theme generation
+                google_response = generate_with_retry(
+                    client=google_genai_client,
+                    model_name=GEMINI_MODEL_NAME,
+                    contents=[{"role": "user", "parts": [{"text": theme_gen_prompt}]}],
+                    config=theme_gen_config,
+                    stream=False # Theme generation is not streamed
+                )
                 theme_gen_content = None
-                if google_response.candidates and google_response.candidates[0].content and google_response.candidates[0].content.parts: theme_gen_content = google_response.candidates[0].content.parts[0].text
-                elif hasattr(google_response, 'text'): theme_gen_content = google_response.text
+                if google_response.candidates and google_response.candidates[0].content and google_response.candidates[0].content.parts:
+                    theme_gen_content = google_response.candidates[0].content.parts[0].text
+                elif hasattr(google_response, 'text'):
+                     theme_gen_content = google_response.text
                 else: raise ValueError("Theme generation returned no usable content.")
+
                 if not theme_gen_content: raise ValueError("Theme generation returned empty content.")
-                cleaned_theme_content = theme_gen_content.strip()
-                if cleaned_theme_content.startswith("```json"): cleaned_theme_content = cleaned_theme_content[7:-3].strip()
-                elif cleaned_theme_content.startswith("```"): cleaned_theme_content = cleaned_theme_content[3:-3].strip()
-                parsed_theme_response = json.loads(cleaned_theme_content)
+
+                parsed_theme_response = json.loads(theme_gen_content)
                 theme_arguments = parsed_theme_response.get("arguments", {}) if isinstance(parsed_theme_response, dict) else {}
-                result = handle_create_theme(theme_arguments); status_code = 200 if result.get("status") == "success" else 400
+                result = handle_create_theme(theme_arguments)
+                status_code = 200 if result.get("status") == "success" else 400
                 return jsonify(result), status_code
             except (json.JSONDecodeError, ValueError, ConnectionError, Exception) as e:
                  logging.error(f"Error generating/parsing theme details from Gemini (retries exhausted?): {e}", exc_info=True)
@@ -791,473 +901,166 @@ def handle_ask():
              if result.get("status") != "success" and ("internal error" in result.get("message", "").lower() or "unexpected error" in result.get("message", "").lower()): status_code = 500
              return jsonify(result), status_code
 
-        # --- RAG INTEGRATION ---
+        # --- RAG INTEGRATION & STREAMING ANSWER ---
         elif tool_name_decision in ["read_files", "answer_question"]:
-            logging.info(f"Gemini chose {tool_name_decision}. Performing RAG...")
+            logging.info(f"Processing query with RAG/Answer logic (Tool: {tool_name_decision}).")
             if not document_chunks: logging.warning("Document chunks not available for RAG. Answering without context.")
-            relevant_context = {}; source_info = []
+            relevant_context = {}
+            source_info = [] # Will hold {"source": filename} dicts
+
             if document_chunks:
                 try:
                     logging.info("Generating embedding for user query...")
+                    query_content = types.Content(parts=[types.Part(text=query)])
                     query_embedding_response = generate_with_retry(
-                        client=google_genai_client, model_name=EMBEDDING_MODEL_NAME, contents=query,
+                        client=google_genai_client, model_name=EMBEDDING_MODEL_NAME, contents=query_content,
                         config=types.EmbedContentConfig(task_type="retrieval_query"), stream=False
                     )
                     query_embedding = None
-                    print(query_embedding_response)
-                    # --- CORRECTED QUERY EMBEDDING EXTRACTION ---
                     if query_embedding_response and hasattr(query_embedding_response, 'embeddings') and query_embedding_response.embeddings and query_embedding_response.embeddings[0].values:
                          query_embedding = query_embedding_response.embeddings[0].values
                          logging.info("Query embedding generated successfully.")
-                    # --- END CORRECTION ---
                     else: logging.warning("Query embedding generation returned no usable content.")
                 except (ConnectionError, Exception) as e:
                     logging.error(f"Error generating embedding for query (retries exhausted?): {e}", exc_info=True)
                     logging.warning("Query embedding failed. Answering without RAG context.")
                     query_embedding = None
+
                 if query_embedding:
-                    logging.info("Finding relevant document chunks...")
-                    relevant_chunks = find_relevant_chunks(query_embedding, top_k=5)
+                    logging.info(f"Finding relevant document chunks for profile '{profile_key}'...")
+                    # CORRECTED: Pass allowed_guides to find_relevant_chunks
+                    relevant_chunks = find_relevant_chunks(query_embedding, top_k=5, allowed_guides=profile_allowed_guides)
                     logging.info(f"Found {len(relevant_chunks)} relevant chunks.")
                     if relevant_chunks:
                         context_parts = []
                         for chunk in relevant_chunks:
                             context_parts.append(chunk["text"])
-                            if {"source": chunk["source"]} not in source_info: source_info.append({"source": chunk["source"]})
-                        relevant_context = {"Relevant Documents": "\n\n---\n\n".join(context_parts)}
+                            # Store source info for sending to client
+                            if {"source": chunk["source"]} not in source_info:
+                                source_info.append({"source": chunk["source"]})
+                        relevant_context = {"Relevant Context": "\n\n---\n\n".join(context_parts)}
                         logging.debug(f"Context sent to LLM: {relevant_context}")
+                        # Set ai_cited_sources based on RAG results *before* calling LLM
+                        ai_cited_sources = source_info
 
-            answer_gen_prompt = construct_google_answer_prompt(query, relevant_context)
-            try:
-                google_response = generate_with_retry(client=google_genai_client, model_name=GEMINI_MODEL_NAME, contents=[{"role": "user", "parts": [{"text": answer_gen_prompt}]}], config=common_gen_config, stream=False)
-                json_content_str = None
-                if google_response.candidates and google_response.candidates[0].content and google_response.candidates[0].content.parts: json_content_str = google_response.candidates[0].content.parts[0].text
-                elif hasattr(google_response, 'text'): json_content_str = google_response.text
-                else: raise ValueError("Answer generation (JSON) returned no usable content.")
-                if not json_content_str: raise ValueError("Answer generation (JSON) returned empty content.")
-                logging.debug(f"Gemini raw JSON answer response: {json_content_str}")
-                cleaned_json_str = json_content_str.strip()
-                if cleaned_json_str.startswith("```json"): cleaned_json_str = cleaned_json_str[7:-3].strip()
-                elif cleaned_json_str.startswith("```"): cleaned_json_str = cleaned_json_str[3:-3].strip()
-                try:
-                    parsed_answer_data = json.loads(cleaned_json_str)
-                    if not isinstance(parsed_answer_data, dict): raise ValueError("Parsed JSON is not a dictionary.")
-                    answer_markdown = parsed_answer_data.get("answer", "").strip() or "(No answer provided.)"
-                    ai_cited_sources_raw = parsed_answer_data.get("sources", [])
-                    valid_ai_cited_sources = []
-                    if isinstance(ai_cited_sources_raw, list) and all(isinstance(s, str) for s in ai_cited_sources_raw):
-                         loaded_source_names = [chunk["source"] for chunk in document_chunks]
-                         for cited_source in ai_cited_sources_raw:
-                             if cited_source in loaded_source_names:
-                                 if {"source": cited_source} not in valid_ai_cited_sources: valid_ai_cited_sources.append({"source": cited_source})
-                             else: logging.warning(f"AI cited source '{cited_source}' which was not among the loaded documents.")
-                    ai_cited_sources = valid_ai_cited_sources
-                    should_stream_answer = True
-                    logging.info(f"AI cited {len(ai_cited_sources)} sources.")
-                except json.JSONDecodeError as json_e:
-                    logging.error(f"Failed to parse JSON response from Gemini: {json_e}. Raw: '{cleaned_json_str}'", exc_info=True)
-                    answer_markdown = f"(Error: Could not understand AI response.)"; ai_cited_sources = []; should_stream_answer = True
-            except (ConnectionError, ValueError, Exception) as e:
-                 logging.error(f"Error generating/parsing JSON answer (RAG): {e}", exc_info=True)
-                 return jsonify({"error": f"Sorry, error generating answer: {e}"}), 500
+            # --- Prepare for Streaming ---
+            # CORRECTED: Pass the profile's system prompt to the answer prompt
+            answer_gen_prompt = construct_google_answer_prompt(query, relevant_context, profile_system_prompt)
+            should_stream_answer = True # Always stream for answer_question/read_files
 
-        else: # Fallback for unexpected tool name
-             logging.warning(f"Unexpected tool decision: {tool_name_decision}. Defaulting to answer_question (JSON)...")
-             answer_gen_prompt = construct_google_answer_prompt(query, {})
-             try:
-                 google_response = generate_with_retry(client=google_genai_client, model_name=GEMINI_MODEL_NAME, contents=[{"role": "user", "parts": [{"text": answer_gen_prompt}]}], config=common_gen_config, stream=False)
-                 json_content_str = None
-                 if google_response.candidates and google_response.candidates[0].content and google_response.candidates[0].content.parts: json_content_str = google_response.candidates[0].content.parts[0].text
-                 elif hasattr(google_response, 'text'): json_content_str = google_response.text
-                 else: raise ValueError("Answer generation (JSON fallback) returned no usable content.")
-                 if not json_content_str: raise ValueError("Answer generation (JSON fallback) returned empty content.")
-                 cleaned_json_str = json_content_str.strip()
-                 if cleaned_json_str.startswith("```json"): cleaned_json_str = cleaned_json_str[7:-3].strip()
-                 elif cleaned_json_str.startswith("```"): cleaned_json_str = cleaned_json_str[3:-3].strip()
-                 try:
-                     parsed_answer_data = json.loads(cleaned_json_str)
-                     if not isinstance(parsed_answer_data, dict): raise ValueError("Parsed JSON is not a dictionary.")
-                     answer_markdown = parsed_answer_data.get("answer", "").strip() or "(No answer provided.)"
-                     ai_cited_sources = []
-                     answer_markdown = f"*(Note: An unexpected tool '{tool_name_decision}' was suggested.)*\n\n" + answer_markdown
-                     should_stream_answer = True
-                 except json.JSONDecodeError as json_e:
-                     logging.error(f"Failed to parse JSON response from Gemini (fallback): {json_e}. Raw: '{cleaned_json_str}'", exc_info=True)
-                     answer_markdown = f"*(Note: An unexpected tool '{tool_name_decision}' was suggested.)*\n\n(Error: Could not understand AI response.)"; ai_cited_sources = []; should_stream_answer = True
-             except (ConnectionError, ValueError, Exception) as e:
-                 logging.error(f"Error generating/parsing JSON answer (fallback): {e}", exc_info=True)
-                 return jsonify({"error": f"Sorry, error generating response: {e}"}), 500
-
-
-        # --- Stream Answer (Simulated) ---
-        if should_stream_answer and answer_markdown is not None:
-            def stream_answer_generator(full_answer_md, sources_cited_by_ai, tool_decision, file_read_errs):
+            # Define the actual streaming generator function
+            def stream_answer_generator(stream_iterator, sources_to_cite):
                 start_time = time.time()
+                sent_chars = 0
                 try:
-                    yield f"event: sources\ndata: {json.dumps(sources_cited_by_ai)}\n\n".encode('utf-8')
-                    logging.info(f"Sent sources event (AI cited): {sources_cited_by_ai}")
-                    if tool_decision == "read_files" and file_read_errs and file_read_errs.get('errors'):
-                         error_info_msg = f"**Note:** Issues accessing info: {', '.join(file_read_errs['errors'])}\n\n---\n\n"
-                         yield f"event: token\ndata: {json.dumps({'token': error_info_msg})}\n\n".encode('utf-8'); time.sleep(0.05)
-                    chunk_size = 1; sent_chars = 0
-                    for i in range(0, len(full_answer_md), chunk_size):
-                        chunk = full_answer_md[i:i+chunk_size]; sent_chars += len(chunk)
-                        yield f"event: token\ndata: {json.dumps({'token': chunk})}\n\n".encode('utf-8')
-                        time.sleep(0.0067) # Adjust speed
-                    yield f"event: end\ndata: {{}}\n\n".encode('utf-8')
-                    end_time = time.time(); logging.info(f"Sent end event. Simulated stream finished in {end_time - start_time:.2f}s. Chars: {sent_chars}")
-                except Exception as e:
-                    logging.error(f"Stream error during simulated generation: {e}", exc_info=True)
-                    yield f"event: error\ndata: {json.dumps({'error': f'Stream generation error: {e}'})}\n\n".encode('utf-8')
-            generator_instance = stream_answer_generator(answer_markdown, ai_cited_sources, tool_name_decision, file_read_errors_for_stream)
-            return Response(stream_with_context(generator_instance), mimetype='text/event-stream')
+                    # 1. Send sources first
+                    yield f"event: sources\ndata: {json.dumps(sources_to_cite)}\n\n".encode('utf-8')
+                    logging.info(f"Sent sources event: {sources_to_cite}")
 
-        elif not should_stream_answer:
-            logging.error("Reached end of /ask logic unexpectedly without streaming or returning a specific JSON response.")
-            return jsonify({"error": "An unexpected internal error occurred after tool selection."}), 500
-        else:
-            logging.error("No valid answer content was available for streaming.")
-            return jsonify({"error": "Failed to generate response content."}), 500
+                    # 2. Stream Gemini response chunks
+                    for chunk in stream_iterator:
+                        # Check if the chunk has candidates, content, and parts
+                        if chunk.candidates and chunk.candidates[0].content.parts:
+                            # CORRECTED: Access the text from the first part in the parts list
+                            token = chunk.candidates[0].content.parts[0].text
+                            if token: # Only yield if token is not empty
+                                sent_chars += len(token)
+                                # Escape newlines and wrap in JSON for SSE data field
+                                json_data = json.dumps({"token": token})
+                                yield f"event: token\ndata: {json_data}\n\n".encode('utf-8')
+                                # Small sleep to prevent overwhelming the client? Optional.
+                                # time.sleep(0.001)
+                        else:
+                             # Handle potential empty chunks or different structures gracefully
+                             logging.debug("Stream chunk did not contain expected text part.")
+
+
+                    # 3. Send end event
+                    yield f"event: end\ndata: {{}}\n\n".encode('utf-8')
+                    end_time = time.time()
+                    logging.info(f"Sent end event. Stream finished in {end_time - start_time:.2f}s. Chars: {sent_chars}")
+
+                except Exception as e:
+                    logging.error(f"Stream error during generation: {e}", exc_info=True)
+                    yield f"event: error\ndata: {json.dumps({'error': f'Stream generation error: {e}'})}\n\n".encode('utf-8')
+
+            # --- Call Gemini with stream=True ---
+            try:
+                common_gen_config = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_budget=0) if GEMINI_MODEL_NAME == "gemini-2.5-flash-preview-04-17" else None)
+                # CORRECTED: Use generate_content_stream for streaming
+                gemini_stream_iterator = generate_with_retry(
+                    client=google_genai_client,
+                    model_name=GEMINI_MODEL_NAME,
+                    contents=[{"role": "user", "parts": [{"text": answer_gen_prompt}]}],
+                    config=common_gen_config,
+                    stream=True # <<<--- IMPORTANT: Enable streaming
+                )
+
+                # Create the Flask response with the generator
+                generator_instance = stream_answer_generator(gemini_stream_iterator, ai_cited_sources)
+                return Response(stream_with_context(generator_instance), mimetype='text/event-stream')
+
+            except (ConnectionError, ValueError, Exception) as e:
+                 logging.error(f"Error initiating Gemini stream or during streaming: {e}", exc_info=True)
+                 # Return a JSON error if streaming setup fails
+                 return jsonify({"error": f"Sorry, error generating answer stream: {e}"}), 500
+
+        else: # Fallback for unexpected tool name (Should not stream this ideally, but keep simple for now)
+             logging.warning(f"Unexpected tool decision: {tool_name_decision}. Defaulting to non-streaming answer_question...")
+             # CORRECTED: Use the default profile's system prompt for fallback
+             fallback_system_prompt = PROFILES_DATA.get(DEFAULT_PROFILE_KEY, {}).get('system_prompt', "You are a helpful AI assistant. Answer questions.")
+             answer_gen_prompt = construct_google_answer_prompt(query, {}, fallback_system_prompt)
+             try:
+                 # Non-streaming call for fallback
+                 google_response = generate_with_retry(
+                     client=google_genai_client,
+                     model_name=GEMINI_MODEL_NAME,
+                     contents=[{"role": "user", "parts": [{"text": answer_gen_prompt}]}],
+                     config=None, # Use default config for simple fallback
+                     stream=False
+                 )
+                 answer_text = "(No answer provided.)" # Default
+                 if google_response.candidates and google_response.candidates[0].content and google_response.candidates[0].content.parts:
+                     answer_text = google_response.candidates[0].content.parts[0].text
+                 elif hasattr(google_response, 'text'):
+                      answer_text = google_response.text
+
+                 answer_markdown = f"*(Note: An unexpected tool '{tool_name_decision}' was suggested.)*\n\n" + answer_text.strip()
+                 ai_cited_sources = [] # No sources for fallback
+
+                 # Simulate stream for this fallback case for consistency on client
+                 def fallback_stream_generator(full_answer_md, sources_cited_by_ai):
+                     yield f"event: sources\ndata: {json.dumps(sources_cited_by_ai)}\n\n".encode('utf-8')
+                     chunk_size = 1
+                     for i in range(0, len(full_answer_md), chunk_size):
+                         chunk = full_answer_md[i:i+chunk_size]
+                         yield f"event: token\ndata: {json.dumps({'token': chunk})}\n\n".encode('utf-8')
+                         time.sleep(0.0067)
+                     yield f"event: end\ndata: {{}}\n\n".encode('utf-8')
+                     logging.info("Fallback stream finished.")
+
+                 generator_instance = fallback_stream_generator(answer_markdown, ai_cited_sources)
+                 return Response(stream_with_context(generator_instance), mimetype='text/event-stream')
+
+             except (ConnectionError, ValueError, Exception) as e:
+                 logging.error(f"Error generating fallback answer: {e}", exc_info=True)
+                 return jsonify({"error": f"Sorry, error generating fallback response: {e}"}), 500
+
+        # This part should not be reachable if streaming is handled correctly
+        # logging.error("Reached end of /ask logic unexpectedly without streaming or returning a specific JSON response.")
+        # return jsonify({"error": "An unexpected internal error occurred after tool selection."}), 500
 
     except Exception as e:
         logging.error(f"Unhandled error in /ask endpoint: {e}", exc_info=True)
         return jsonify({"error": f"An internal server error occurred: {str(e)}"}), 500
 
 
-# --- CRM API Endpoints (Delegating to crm_logic) ---
-@app.route('/api/contacts', methods=['POST'])
-def api_create_contact():
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
-    try:
-        created_contact = crm_logic.create_contact_logic(request.get_json())
-        return jsonify(created_contact), 201
-    except (ValidationError, ConflictError) as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/contacts', methods=['GET'])
-def api_get_contacts():
-    try:
-        contacts = crm_logic.get_contacts_logic(request.args.get('search'))
-        return jsonify(contacts)
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/contacts/<int:contact_id>', methods=['GET'])
-def api_get_contact(contact_id):
-    try:
-        contact = crm_logic.get_contact_logic(contact_id)
-        return jsonify(contact)
-    except NotFoundError as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/contacts/<int:contact_id>', methods=['PUT'])
-def api_update_contact(contact_id):
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
-    try:
-        updated_contact = crm_logic.update_contact_logic(contact_id, request.get_json())
-        if updated_contact is None:
-            return jsonify({"message": "No changes detected"}), 200
-        else:
-            return jsonify(updated_contact)
-    except (ValidationError, ConflictError, NotFoundError) as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/contacts/<int:contact_id>', methods=['DELETE'])
-def api_delete_contact(contact_id):
-    try:
-        crm_logic.delete_contact_logic(contact_id)
-        return jsonify({"message": "Contact and related records deleted successfully"}), 200
-    except NotFoundError as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/support_items', methods=['POST'])
-def api_create_support_item():
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
-    try:
-        item = crm_logic.create_support_item_logic(request.get_json())
-        return jsonify(item), 201
-    except (ValidationError, NotFoundError) as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/support_items', methods=['GET'])
-def api_get_support_items():
-    try:
-        filters = {k: v for k, v in request.args.items() if v is not None}
-        if 'contact_id' in filters:
-            try:
-                filters['contact_id'] = int(filters['contact_id'])
-            except ValueError:
-                return jsonify({"error": "Invalid contact_id filter"}), 400
-        items = crm_logic.get_support_items_logic(filters)
-        return jsonify(items)
-    except ValidationError as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/support_items/<int:item_id>', methods=['GET'])
-def api_get_support_item(item_id):
-    try:
-        item = crm_logic.get_support_item_logic(item_id)
-        return jsonify(item)
-    except NotFoundError as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/support_items/<int:item_id>', methods=['PUT'])
-def api_update_support_item(item_id):
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
-    try:
-        updated_item = crm_logic.update_support_item_logic(item_id, request.get_json())
-        if updated_item is None:
-            return jsonify({"message": "No changes detected"}), 200
-        else:
-            return jsonify(updated_item)
-    except (ValidationError, NotFoundError) as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/support_items/<int:item_id>', methods=['DELETE'])
-def api_delete_support_item(item_id):
-    try:
-        crm_logic.delete_support_item_logic(item_id)
-        return jsonify({"message": "Support item and related records deleted successfully"}), 200
-    except NotFoundError as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/cases', methods=['POST'])
-def api_create_case():
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
-    try:
-        case = crm_logic.create_case_logic(request.get_json())
-        return jsonify(case), 201
-    except (ValidationError, NotFoundError) as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/cases', methods=['GET'])
-def api_get_cases():
-    try:
-        filters = {k: v for k, v in request.args.items() if v is not None}
-        if 'support_item_id' in filters:
-            try:
-                filters['support_item_id'] = int(filters['support_item_id'])
-            except ValueError:
-                return jsonify({"error": "Invalid support_item_id filter"}), 400
-        cases = crm_logic.get_cases_logic(filters)
-        return jsonify(cases)
-    except ValidationError as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/cases/<int:case_id>', methods=['GET'])
-def api_get_case(case_id):
-    try:
-        case = crm_logic.get_case_logic(case_id)
-        return jsonify(case)
-    except NotFoundError as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/cases/<int:case_id>', methods=['PUT'])
-def api_update_case(case_id):
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
-    try:
-        updated_case = crm_logic.update_case_logic(case_id, request.get_json())
-        if updated_case is None:
-            return jsonify({"message": "No changes detected"}), 200
-        else:
-            return jsonify(updated_case)
-    except (ValidationError, NotFoundError) as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/cases/<int:case_id>', methods=['DELETE'])
-def api_delete_case(case_id):
-    try:
-        crm_logic.delete_case_logic(case_id)
-        return jsonify({"message": "Case and related records deleted successfully"}), 200
-    except NotFoundError as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/claim_items', methods=['POST'])
-def api_create_claim_item():
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
-    try:
-        item = crm_logic.create_claim_item_logic(request.get_json())
-        return jsonify(item), 201
-    except (ValidationError, NotFoundError) as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/claim_items', methods=['GET'])
-def api_get_claim_items():
-    try:
-        filters = {k: v for k, v in request.args.items() if v is not None}
-        if 'case_id' in filters:
-            try:
-                filters['case_id'] = int(filters['case_id'])
-            except ValueError:
-                return jsonify({"error": "Invalid case_id filter"}), 400
-        if 'contact_id' in filters:
-            try:
-                filters['contact_id'] = int(filters['contact_id'])
-            except ValueError:
-                return jsonify({"error": "Invalid contact_id filter"}), 400
-        items = crm_logic.get_claim_items_logic(filters)
-        return jsonify(items)
-    except ValidationError as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/claim_items/<int:item_id>', methods=['GET'])
-def api_get_claim_item(item_id):
-    try:
-        item = crm_logic.get_claim_item_logic(item_id)
-        return jsonify(item)
-    except NotFoundError as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/claim_items/<int:item_id>', methods=['PUT'])
-def api_update_claim_item(item_id):
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
-    try:
-        updated_item = crm_logic.update_claim_item_logic(item_id, request.get_json())
-        if updated_item is None:
-            return jsonify({"message": "No changes detected"}), 200
-        else:
-            return jsonify(updated_item)
-    except (ValidationError, NotFoundError) as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
-
-@app.route('/api/claim_items/<int:item_id>', methods=['DELETE'])
-def api_delete_claim_item(item_id):
-    try:
-        crm_logic.delete_claim_item_logic(item_id)
-        return jsonify({"message": "Claim item deleted successfully"}), 200
-    except NotFoundError as e:
-        return jsonify({"error": str(e)}), e.status_code
-    except StorageError as e:
-        logging.error(f"Storage error: {e}", exc_info=True)
-        return jsonify({"error": "Server storage error."}), e.status_code
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return jsonify({"error": "Unexpected server error."}), 500
+# --- REMOVED CRM API Endpoints ---
 
 
 # --- Main Execution ---
 if __name__ == '__main__':
-    crm_logic.initialize_crm_storage()
+    # Removed crm_logic.initialize_crm_storage()
     logging.info("Starting Flask development server...")
     try:
         try:
@@ -1273,7 +1076,15 @@ if __name__ == '__main__':
             async def embed_guides_async():
                  await load_and_embed_guides()
             try:
-                asyncio.run(embed_guides_async())
+                # Run embedding in the current event loop if available, otherwise create a new one
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(embed_guides_async())
+                    logging.info("Scheduled guide embedding in existing event loop.")
+                except RuntimeError: # No running event loop
+                    logging.info("No running event loop, running guide embedding synchronously.")
+                    asyncio.run(embed_guides_async())
+
             except Exception as e:
                 logging.error(f"Error during initial guide embedding: {e}", exc_info=True)
 

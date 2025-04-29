@@ -5,13 +5,21 @@
 let themesData = typeof embeddedThemesData !== 'undefined' ? embeddedThemesData : {};
 const defaultThemeName = typeof embeddedDefaultThemeName !== 'undefined' ? embeddedDefaultThemeName : 'default';
 
+// --- Embedded Profile Data ---
+let profilesData = typeof embeddedProfilesData !== 'undefined' ? embeddedProfilesData : {};
+const defaultProfileKey = typeof embeddedDefaultProfileKey !== 'undefined' ? embeddedDefaultProfileKey : 'default';
+let selectedProfileKey = defaultProfileKey; // State variable for currently selected profile
+let allLoadedGuides = typeof embeddedAllGuides !== 'undefined' ? embeddedAllGuides : []; // Store all loaded guide names
+
 // --- Shared DOM Elements ---
 const themeCirclesContainer = document.getElementById('theme-circles-container');
 const chatInterfaceView = document.getElementById('chat-interface-view');
-const crmInterfaceView = document.getElementById('crm-interface-view');
+// REMOVED crmInterfaceView
 const showChatBtn = document.getElementById('show-chat-btn');
-const showCrmBtn = document.getElementById('show-crm-btn');
-const menuNavButtons = document.querySelectorAll('.menu-nav-button'); // All nav buttons
+// REMOVED showCrmBtn
+const menuNavButtons = document.querySelectorAll('#side-menu .menu-nav-button'); // Keep for potential future use / styling active
+const profileSelect = document.getElementById('profile-select'); // New profile select element
+const profileGuidesListContainer = document.getElementById('profile-guides-list'); // New guides list UL
 
 // --- Theme Functions ---
 function applyTheme(themeKey) {
@@ -52,24 +60,108 @@ function populateThemeCircles() {
     }
  }
 
-// --- View Switching Function ---
-function switchToAppView(viewToShowId) {
-    const views = [chatInterfaceView, crmInterfaceView];
-    views.forEach(view => {
-        if (view) view.classList.toggle('view-hidden', view.id !== viewToShowId);
-    });
-    // Update main navigation button active state
-    menuNavButtons.forEach(button => {
-         if (button.id.startsWith('show-')) {
-            button.classList.toggle('active', button.id === `show-${viewToShowId.split('-')[0]}-btn`);
-         }
-    });
-    console.log(`Switched to app view: ${viewToShowId}`);
+// --- Profile Functions ---
+function populateProfileDropdown() {
+    if (!profilesData || Object.keys(profilesData).length === 0 || !profileSelect) {
+        console.error("No profile data or select element available.");
+        return;
+    }
 
-    // If switching to CRM view, reset it to dashboard (handled by CRM button listener)
-    // If switching away from CRM, potentially clear CRM state if needed (not currently necessary)
+    profileSelect.innerHTML = ''; // Clear existing options
+
+    // Add options from profilesData
+    for (const key in profilesData) {
+        if (profilesData.hasOwnProperty(key)) {
+            const profile = profilesData[key];
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = profile.name || key;
+            profileSelect.appendChild(option);
+        }
+    }
+
+    // Set the selected profile based on localStorage or default
+    const savedProfileKey = localStorage.getItem('selectedProfileKey');
+    if (savedProfileKey && profilesData.hasOwnProperty(savedProfileKey)) {
+        selectedProfileKey = savedProfileKey;
+    } else {
+        selectedProfileKey = defaultProfileKey;
+    }
+
+    profileSelect.value = selectedProfileKey;
+    console.log(`Initial profile set to: ${selectedProfileKey}`);
+
+    // Add event listener for profile changes
+    profileSelect.addEventListener('change', handleProfileChange);
+
+    // Update the guides list for the initial profile
+    updateProfileGuidesList();
 }
 
+function handleProfileChange() {
+    if (profileSelect) {
+        selectedProfileKey = profileSelect.value;
+        console.log(`Profile changed to: ${selectedProfileKey}`);
+        try {
+            localStorage.setItem('selectedProfileKey', selectedProfileKey);
+        } catch (e) {
+            console.warn("Could not save profile preference:", e);
+        }
+        // Update the displayed guides list
+        updateProfileGuidesList();
+        // Optionally, add logic here to clear chat or show a message about the profile change
+        // For now, it just updates the state and storage.
+    }
+}
+
+// CORRECTED: Function to update the displayed list of guides for the selected profile
+function updateProfileGuidesList() {
+    if (!profileGuidesListContainer || !profilesData) {
+        console.error("Profile guides list container or profiles data not available.");
+        return;
+    }
+
+    profileGuidesListContainer.innerHTML = ''; // Clear current list
+
+    const profile = profilesData[selectedProfileKey];
+    if (!profile) {
+        profileGuidesListContainer.innerHTML = '<li class="muted">Error: Profile not found</li>';
+        return;
+    }
+
+    const profileGuides = profile.available_guides;
+
+    // Determine which list of guides to display
+    // If profileGuides is empty, use the globally loaded allLoadedGuides list
+    const guidesToDisplay = (!profileGuides || profileGuides.length === 0) ? allLoadedGuides : profileGuides;
+
+    if (!guidesToDisplay || guidesToDisplay.length === 0) {
+        // This message now appears if *no* guides were loaded at all, or if a profile
+        // specifically lists an empty array AND no guides were loaded globally.
+        profileGuidesListContainer.innerHTML = '<li class="muted">(No guides available/loaded)</li>';
+    } else {
+        guidesToDisplay.forEach(guideFilename => {
+            const li = document.createElement('li');
+            const link = document.createElement('span'); // Use span for styling and click handling
+            link.classList.add('profile-guide-link');
+            link.textContent = guideFilename;
+            link.dataset.filename = guideFilename; // Store filename for click handler
+            link.title = `Click to view ${guideFilename}`;
+            li.appendChild(link);
+            profileGuidesListContainer.appendChild(li);
+        });
+    }
+}
+
+
+// Function to get the currently selected profile key (used by chat.js)
+function getSelectedProfileKey() {
+    return selectedProfileKey;
+}
+
+
+// --- REMOVED View Switching Function ---
+// No longer needed as there's only one main view.
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -80,48 +172,42 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (defaultThemeName && themesData[defaultThemeName]) { applyTheme(defaultThemeName); }
     else if (Object.keys(themesData).length > 0) { applyTheme(Object.keys(themesData)[0]); }
 
-    // 2. Set Initial View
-    switchToAppView('chat-interface-view');
-    // Initialize CRM view state (call function from crm.js)
-    if (typeof initializeCrmView === 'function') {
-        initializeCrmView(); // Sets CRM to dashboard initially
-    } else {
-        console.error("initializeCrmView function not found in crm.js");
-    }
+    // 2. Initialize Profiles and Dropdown (which now also updates the guide list)
+    populateProfileDropdown();
 
+    // 3. Set Initial View (Chat view is now the only view)
+    if(chatInterfaceView) chatInterfaceView.classList.remove('view-hidden');
+    if(showChatBtn) showChatBtn.classList.add('active'); // Keep chat button active
 
-    // 3. Add Main Navigation Listeners
-    if(showChatBtn) showChatBtn.addEventListener('click', () => switchToAppView('chat-interface-view'));
-    if(showCrmBtn) showCrmBtn.addEventListener('click', () => {
-        switchToAppView('crm-interface-view');
-        // Reset CRM view to dashboard when switching to the CRM tab
-        if (typeof showCrmSection === 'function') {
-            showCrmSection('crm-dashboard-view');
-            // Deactivate all CRM nav buttons
-            const crmNavs = document.querySelectorAll('#side-menu .menu-section:nth-child(3) .menu-nav-button');
-            crmNavs.forEach(btn => btn.classList.remove('active'));
-            // Update CRM title
-             const crmViewTitle = document.getElementById('crm-view-title');
-             if(crmViewTitle) crmViewTitle.textContent = `CRM Dashboard`;
+    // 4. REMOVED Main Navigation Listeners for switching views
 
-        } else {
-             console.error("showCrmSection function not found in crm.js");
-        }
-    });
-
-    // 4. Initialize Chat Module (Add listeners defined in chat.js)
+    // 5. Initialize Chat Module (Add listeners defined in chat.js)
     if (typeof initializeChat === 'function') {
         initializeChat();
     } else {
         console.error("initializeChat function not found in chat.js");
     }
 
-    // 5. Initialize CRM Module (Add listeners defined in crm.js)
-     if (typeof initializeCrm === 'function') {
-        initializeCrm();
-    } else {
-        console.error("initializeCrm function not found in crm.js");
+    // 6. Add event listener for clicks on profile guides list (Event Delegation)
+    if (profileGuidesListContainer) {
+        profileGuidesListContainer.addEventListener('click', (event) => {
+            const target = event.target;
+            // Check if the clicked element is a guide link
+            if (target && target.classList.contains('profile-guide-link') && target.dataset.filename) {
+                const filename = target.dataset.filename;
+                console.log(`Clicked profile guide link: ${filename}`);
+                // Check if viewFile function exists (it should be global from chat.js)
+                if (typeof viewFile === 'function') {
+                    viewFile(filename);
+                } else {
+                    console.error("viewFile function not found. Ensure chat.js is loaded.");
+                }
+            }
+        });
     }
+
+
+    // 7. REMOVED CRM Module Initialization
 
     console.log("Main application initialized.");
 });

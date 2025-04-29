@@ -1,0 +1,37 @@
+flowchart TD
+    CM1["Complete Initial Transitional Housing Support Plan (THSP) in CRM (Desired: Alerts for updates/goals, KPI: Within 5 days of entry)"];
+    CM2["Conduct Weekly Case Management Meeting & Review/Update THSP"];
+    CM3["Conduct Weekly Room Inspection & Document in CRM (Desired: CRM Form & weekly alert, KPI: Weekly)"];
+    CM4["Conduct Daily Resident Check & Document in CRM (Desired: Autofill form, checkbox, comment, daily alert, KPI: Daily)"];
+    CM5["Complete PWI Survey in CRM (KPI: For each veteran, periodically)"];
+    CM6["Conduct Drug Screening & RBT Testing & Document in CRM (As required)"];
+    CM7["Link Veterans (<55yrs, non-retirement goal) with Housing Officer (KPI: Within 5 working days)"];
+    CM8["Document All Interactions/Updates in CRM"];
+    CM9["Handle Breach of Participation Agreement (if necessary), Save Letter & Track to CRM"];
+    CM10["Document Weekly Resident Listing in SharePoint"];
+    CM11["Goal: Complete Residential Transitional Housing within 12 Weeks"];
+
+    CM1 --> CM2;
+    CM2 --> CM3;
+    CM3 --> CM4;
+    CM4 --> CM5;
+    CM5 --> CM6;
+    CM6 --> CM7;
+    CM7 --> CM10;
+    CM2 --> CM8;
+    CM10 --> CM11;
+    CM8 --> CM9;
+
+
+
+
+flowchart TD
+    E1["Case Manager has Face-to-Face Exit Meeting with Veteran"];
+    E1 --> E2["Provide Veteran: H4H Client Exit Letter"];
+    E2 --> E3["Provide Veteran: H4H Cessation of Support Letter"];
+    E3 --> E4["Provide Veteran: H4H Crisis Supports & General Numbers"];
+    E4 --> E5["Notify Medclean to Clean Room (Email: name, room, exit date, cc Anne)"];
+    E5 --> E6["Advise INS of Resident Exit Date (Email)"];
+    E6 --> E7["Request Room Code Change (Email Maintenance: cc Anne)"];
+    E8["KPI: Room Ready for Next Veteran within 72 hours (Applies after E5, E6, E7)"];
+    E7 --> E9["Complete Housing Post Transition Case Management (KPI: Within 12 weeks)"];

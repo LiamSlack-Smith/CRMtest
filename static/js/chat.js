@@ -13,11 +13,13 @@ const viewerResizer = document.getElementById('viewer-resizer');
 
 // --- State Variables (Chat & Viewer Specific) ---
 let currentAssistantMessageElement = null;
-let accumulatedResponseForMarkdown = '';
+let currentAssistantContentElement = null; // Store the content div directly
+let accumulatedResponseForMarkdown = ''; // Accumulate for dynamic rendering
 let sourcesForCurrentMessage = [];
-let markdownUpdateTimeoutId = null;
+let markdownUpdateTimeoutId = null; // Timer ID for throttled markdown updates
 let isStreaming = false;
-const MARKDOWN_UPDATE_INTERVAL_MS = 80; // Interval for updating markdown during streaming
+// Adjust the interval as needed for responsiveness vs. performance
+const MARKDOWN_UPDATE_INTERVAL_MS = 50; // Interval for updating markdown during streaming (throttling)
 let isResizingViewer = false;
 let viewerStartX = 0;
 let viewerStartWidth = 0;
@@ -28,68 +30,123 @@ function addMessage(text, sender) {
     messageDiv.classList.add('message');
     messageDiv.classList.add(sender === 'user' ? 'user-message' : 'assistant-message');
 
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('message-content');
+
     if (sender === 'user') {
         // Sanitize user input before inserting as HTML
         const tempDiv = document.createElement('div');
         tempDiv.textContent = text;
-        messageDiv.innerHTML = tempDiv.innerHTML.replace(/\n/g, '<br>');
+        contentDiv.innerHTML = tempDiv.innerHTML.replace(/\n/g, '<br>');
     } else {
-        // Assistant message content is handled by scheduleMarkdownUpdate
-        const contentDiv = document.createElement('div');
-        contentDiv.classList.add('message-content');
+        // Assistant message starts empty or with cursor
         contentDiv.innerHTML = text || '<span class="blinking-cursor">▍</span>'; // Initial state
-        messageDiv.appendChild(contentDiv);
+        // Store references for streaming
+        currentAssistantMessageElement = messageDiv;
+        currentAssistantContentElement = contentDiv;
+        accumulatedResponseForMarkdown = ''; // Reset accumulator
     }
+    messageDiv.appendChild(contentDiv);
+
     if (chatbox) {
         chatbox.appendChild(messageDiv);
         scrollToBottom();
     } else {
         console.error("Chatbox element not found!");
     }
-    return messageDiv;
+    return messageDiv; // Return the main message element
 }
 
 function scrollToBottom() {
     if (!chatbox) return;
+    // Scroll down if user is already near the bottom
     const isScrolledToBottom = chatbox.scrollHeight - chatbox.clientHeight <= chatbox.scrollTop + 60; // Threshold
     if (isScrolledToBottom) {
         if ('scrollBehavior' in document.documentElement.style) {
-            chatbox.scrollTo({ top: chatbox.scrollHeight, behavior: 'smooth' });
+            // Use 'auto' during streaming for faster, less jarring scrolls
+            chatbox.scrollTo({ top: chatbox.scrollHeight, behavior: isStreaming ? 'auto' : 'smooth' });
         } else {
             chatbox.scrollTop = chatbox.scrollHeight; // Fallback for older browsers
         }
     }
 }
 
+// Function to schedule or force Markdown update
 function scheduleMarkdownUpdate(force = false) {
-    if (markdownUpdateTimeoutId && !force) return; // Already scheduled
-    if (markdownUpdateTimeoutId) clearTimeout(markdownUpdateTimeoutId);
-
-    const performUpdate = () => {
-        if (!currentAssistantMessageElement) { markdownUpdateTimeoutId = null; return; }
-        const contentElement = currentAssistantMessageElement.querySelector('.message-content');
-        if (!contentElement) { console.error("No message-content div."); markdownUpdateTimeoutId = null; return; }
-
-        try {
-            let htmlContent = marked.parse(accumulatedResponseForMarkdown);
-            if (isStreaming && !force) { htmlContent += '<span class="blinking-cursor">▍</span>'; }
-            contentElement.innerHTML = htmlContent;
-            if (force) { appendSources(currentAssistantMessageElement, sourcesForCurrentMessage); } // Append sources on final update
-            scrollToBottom();
-        } catch (e) {
-            console.error("Markdown update error:", e);
-            contentElement.innerHTML += '<br><span class="error-message">(Render Error)</span>';
-        } finally {
-            markdownUpdateTimeoutId = null; // Clear ID after execution
+    // If not streaming or forcing, clear any pending update and perform immediately
+    if (!isStreaming || force) {
+        if (markdownUpdateTimeoutId) {
+            clearTimeout(markdownUpdateTimeoutId);
+            markdownUpdateTimeoutId = null;
         }
-    };
-
-    if (force) {
-        performUpdate(); // Execute immediately if forced
-    } else {
-        markdownUpdateTimeoutId = setTimeout(performUpdate, MARKDOWN_UPDATE_INTERVAL_MS); // Schedule throttled update
+        performMarkdownUpdate(force); // Pass 'force' state to the update function
+    } else if (!markdownUpdateTimeoutId) {
+        // If streaming and no update is scheduled, schedule one
+        markdownUpdateTimeoutId = setTimeout(() => {
+            performMarkdownUpdate(false); // Perform update, not final
+        }, MARKDOWN_UPDATE_INTERVAL_MS);
     }
 }
+
+// Function to perform the actual Markdown update
+function performMarkdownUpdate(isFinal = false) {
+    if (!currentAssistantContentElement) {
+        markdownUpdateTimeoutId = null;
+        return;
+    }
+
+    try {
+        // Parse the accumulated text
+        let htmlContent = marked.parse(accumulatedResponseForMarkdown);
+
+        // Add blinking cursor if streaming and it's not the final update
+        if (isStreaming && !isFinal) {
+             // Add cursor after the parsed HTML
+             htmlContent += '<span class="blinking-cursor">▍</span>';
+        }
+
+        // Update the element's content
+        currentAssistantContentElement.innerHTML = htmlContent;
+
+        // If it's the final update, append sources and clear state
+        if (isFinal) {
+            appendSources(currentAssistantMessageElement, sourcesForCurrentMessage);
+            // Clear references and state
+            currentAssistantMessageElement = null;
+            currentAssistantContentElement = null;
+            accumulatedResponseForMarkdown = '';
+            isStreaming = false; // Ensure state is false
+            showLoading(false); // Re-enable input
+        }
+
+        scrollToBottom(); // Scroll after updating content
+
+    } catch (e) {
+        console.error("Markdown update error:", e);
+        // Display a render error message if parsing fails
+        currentAssistantContentElement.innerHTML += '<br><span class="error-message">(Render Error)</span>';
+        // If this was supposed to be final, still clear state
+        if (isFinal) {
+            currentAssistantMessageElement = null;
+            currentAssistantContentElement = null;
+            accumulatedResponseForMarkdown = '';
+            isStreaming = false;
+            showLoading(false);
+        }
+    } finally {
+        // Clear the timeout ID after the update function runs
+        // This is important whether it was scheduled or forced
+        markdownUpdateTimeoutId = null;
+    }
+}
+
+
+// Function to render final Markdown and append sources (kept for clarity, but scheduleMarkdownUpdate(true) does this)
+function finalizeAssistantMessage() {
+    // Call scheduleMarkdownUpdate with force=true
+    scheduleMarkdownUpdate(true);
+}
+
 
 function appendSources(messageElement, sources) {
     if (!messageElement || !sources || sources.length === 0 || messageElement.querySelector('.sources')) return; // Don't add if empty or already added
@@ -111,7 +168,7 @@ function appendSources(messageElement, sources) {
         }
     });
     sourcesDiv.appendChild(sourcesList);
-    messageElement.appendChild(sourcesDiv);
+    messageElement.appendChild(sourcesDiv); // Append to the main message element
 }
 
 function showLoading(show) {
@@ -122,15 +179,32 @@ function showLoading(show) {
 
 function displayError(message, targetElement = null) {
     const errorContent = `<span class="error-message">Error: ${message}</span>`;
-    if (targetElement) {
-        const contentEl = targetElement.querySelector('.message-content') || targetElement;
-        if(contentEl) contentEl.innerHTML = errorContent;
+    let messageToUpdate = targetElement || currentAssistantMessageElement; // Use current if target isn't specified
+
+    if (messageToUpdate) {
+        const contentEl = messageToUpdate.querySelector('.message-content');
+        if (contentEl) {
+             contentEl.innerHTML = errorContent; // Replace content with error
+             // Remove sources if they were added before error
+             const sourcesEl = messageToUpdate.querySelector('.sources');
+             if(sourcesEl) sourcesEl.remove();
+        } else {
+             // Fallback if content element somehow missing
+             messageToUpdate.innerHTML = errorContent;
+        }
     } else {
+        // If no assistant message exists yet, add a new one
         addMessage(`Error: ${message}`, 'assistant');
     }
+
     scrollToBottom();
     isStreaming = false; // Ensure streaming stops on error display
-    if (markdownUpdateTimeoutId) clearTimeout(markdownUpdateTimeoutId);
+    // Clear potentially dangling references
+    currentAssistantMessageElement = null;
+    currentAssistantContentElement = null;
+    accumulatedResponseForMarkdown = '';
+    showLoading(false); // Ensure input is re-enabled
+    if (markdownUpdateTimeoutId) { clearTimeout(markdownUpdateTimeoutId); markdownUpdateTimeoutId = null; } // Clear any pending markdown updates
 }
 
 // --- Send Message and Handle Response ---
@@ -143,40 +217,70 @@ async function sendMessage() {
     showLoading(true);
 
     // Reset state for the new message
-    currentAssistantMessageElement = null;
+    currentAssistantMessageElement = null; // Will be set by addMessage('','assistant')
+    currentAssistantContentElement = null;
     accumulatedResponseForMarkdown = '';
     sourcesForCurrentMessage = [];
     isStreaming = false;
-    if (markdownUpdateTimeoutId) { clearTimeout(markdownUpdateTimeoutId); markdownUpdateTimeoutId = null; }
+    if (markdownUpdateTimeoutId) { clearTimeout(markdownUpdateTimeoutId); markdownUpdateTimeoutId = null; } // Clear any previous timer
+
+    // Get the selected profile key from script.js
+    const profileKey = typeof getSelectedProfileKey === 'function' ? getSelectedProfileKey() : 'default';
+    console.log("Sending message with profile:", profileKey);
+
 
     try {
-        const response = await fetch('/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: query }), });
+        const response = await fetch('/ask', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // Include the profile_key in the request body
+            body: JSON.stringify({ query: query, profile_key: profileKey }),
+        });
 
-        if (!response.ok) { const errorData = await response.json().catch(() => ({ error: `Request failed (${response.status})` })); throw new Error(errorData.error || `Server error (${response.status})`); }
+        if (!response.ok) {
+            // Try to parse error JSON, otherwise use status text
+            let errorMsg = `Server error (${response.status})`;
+            try {
+                const errorData = await response.json();
+                errorMsg = errorData.error || errorMsg;
+            } catch (e) {
+                 errorMsg = response.statusText || errorMsg;
+            }
+            throw new Error(errorMsg);
+        }
+
 
         const contentType = response.headers.get("content-type");
 
-        // Handle JSON Response (non-streaming actions)
+        // Handle JSON Response (non-streaming actions like theme creation, support log)
         if (contentType && contentType.includes("application/json")) {
             const result = await response.json();
             console.log("Received JSON:", result);
             if (result.status === 'success' && result.message) {
-                addMessage(result.message, 'assistant');
-                if(result.themes) { // Handle theme updates specifically
-                    window.themesData = result.themes; // Update global theme data (assuming script.js defines it)
-                    if(typeof populateThemeCircles === 'function') populateThemeCircles();
-                    if(result.new_theme_key && typeof applyTheme === 'function') { applyTheme(result.new_theme_key); }
-                }
-            } else if (result.status === 'error' && result.message) { displayError(result.message); }
-            else { addMessage("Received an unexpected response.", 'assistant'); }
-            showLoading(false);
+                addMessage(result.message, 'assistant'); // Adds a *new* message bubble
+            } else if (result.status === 'error' && result.message) {
+                displayError(result.message); // Display error in a new bubble
+            } else {
+                addMessage("Received an unexpected response.", 'assistant');
+            }
+            showLoading(false); // Re-enable input after non-streaming response
+            // Handle theme updates specifically after receiving JSON
+            if(result.themes && typeof window !== 'undefined') {
+                window.themesData = result.themes;
+                if(typeof populateThemeCircles === 'function') populateThemeCircles();
+                if(result.new_theme_key && typeof applyTheme === 'function') { applyTheme(result.new_theme_key); }
+            }
             return;
         }
-        // Handle SSE Stream
+        // Handle SSE Stream (For RAG answers)
         else if (contentType && contentType.includes("text/event-stream")) {
             if (!response.body) throw new Error("Stream body missing.");
-            currentAssistantMessageElement = addMessage('', 'assistant');
-            if (!currentAssistantMessageElement) throw new Error("Failed message element.");
+
+            // Create the initial assistant message bubble (empty or with cursor)
+            addMessage('', 'assistant'); // This sets currentAssistantMessageElement and currentAssistantContentElement
+
+            if (!currentAssistantContentElement) throw new Error("Failed to create assistant message element.");
+
             isStreaming = true;
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
@@ -185,30 +289,89 @@ async function sendMessage() {
 
             while (true) {
                 const { value, done } = await reader.read();
-                if (done) { isStreaming = false; scheduleMarkdownUpdate(true); console.log("Stream finished."); break; }
+                if (done) {
+                    isStreaming = false;
+                    finalizeAssistantMessage(); // Render final markdown and sources
+                    console.log("Stream finished.");
+                    break; // Exit the loop
+                }
+
                 buffer += decoder.decode(value, { stream: true });
                 let boundaryIndex;
+
                 while ((boundaryIndex = buffer.indexOf('\n\n')) >= 0) {
                     const message = buffer.substring(0, boundaryIndex);
                     buffer = buffer.substring(boundaryIndex + 2);
                     let eventType = 'message', eventData = '';
-                    message.split('\n').forEach(line => { if (line.startsWith('event:')) eventType = line.substring(6).trim(); else if (line.startsWith('data:')) eventData = line.substring(5).trim(); });
-                    if (!firstTokenReceived && (eventType === 'token' || eventType === 'sources')) { const contentEl = currentAssistantMessageElement?.querySelector('.message-content'); if (contentEl) contentEl.innerHTML = ''; firstTokenReceived = true; }
-                    if (eventType === 'sources') { try { sourcesForCurrentMessage = JSON.parse(eventData); console.log("Sources:", sourcesForCurrentMessage); } catch (e) { console.error("Bad sources:", e, eventData); } }
-                    else if (eventType === 'token') { try { const data = JSON.parse(eventData); if (data.token) { accumulatedResponseForMarkdown += data.token; scheduleMarkdownUpdate(); } } catch (e) { console.error("Bad token:", e, eventData); } }
-                    else if (eventType === 'end') { console.log("End event."); }
-                    else if (eventType === 'error') { try { const data = JSON.parse(eventData); throw new Error(data.error || "Stream error"); } catch (e) { console.error("Bad error event:", e, eventData); throw new Error("Unparsable stream error."); } }
-                }
-            }
-        } else { throw new Error(`Unexpected response content type: ${contentType}`); }
+
+                    message.split('\n').forEach(line => {
+                        if (line.startsWith('event:')) eventType = line.substring(6).trim();
+                        else if (line.startsWith('data:')) eventData = line.substring(5).trim();
+                    });
+
+                    // Process events
+                    if (eventType === 'sources') {
+                        try {
+                            sourcesForCurrentMessage = JSON.parse(eventData);
+                            console.log("Sources received:", sourcesForCurrentMessage);
+                            // Don't append sources here, wait until the end
+                        } catch (e) {
+                            console.error("Bad sources JSON:", e, eventData);
+                        }
+                    } else if (eventType === 'token') {
+                        try {
+                            const data = JSON.parse(eventData);
+                            if (data.token) {
+                                if (!firstTokenReceived) {
+                                    // Clear the initial blinking cursor on first token
+                                    currentAssistantContentElement.innerHTML = '';
+                                    firstTokenReceived = true;
+                                }
+                                // Append token directly to the content (as text node to prevent XSS)
+                                currentAssistantContentElement.appendChild(document.createTextNode(data.token));
+                                accumulatedResponseForMarkdown += data.token; // Also accumulate for final render
+                                scheduleMarkdownUpdate(); // Schedule a throttled markdown update
+                                scrollToBottom(); // Scroll as content is added
+                            }
+                        } catch (e) {
+                            console.error("Bad token JSON:", e, eventData);
+                        }
+                    } else if (eventType === 'end') {
+                        // The 'end' event might arrive before the reader signals 'done'
+                        // We handle the finalization in the 'done' block above
+                        console.log("End event received.");
+                    } else if (eventType === 'error') {
+                         // Handle error events within the stream
+                         try {
+                             const data = JSON.parse(eventData);
+                             displayError(data.error || "Stream error reported by server", currentAssistantMessageElement);
+                             reader.cancel(); // Cancel reading the rest of the stream
+                             return; // Exit processing this response
+                         } catch (e) {
+                             console.error("Bad error event JSON:", e, eventData);
+                             displayError("Unparsable stream error reported by server.", currentAssistantMessageElement);
+                             reader.cancel(); // Cancel reading
+                             return; // Exit
+                         }
+                    }
+                } // end while boundaryIndex
+            } // end while(true) reader loop
+        } else {
+            // Handle unexpected content type
+             throw new Error(`Unexpected response content type: ${contentType}`);
+        }
     } catch (error) {
         console.error('Error during sendMessage:', error);
-        displayError(error.message, currentAssistantMessageElement || null);
+        displayError(error.message, currentAssistantMessageElement || null); // Display error in current bubble if exists
+        // Ensure state is reset even if error happens mid-stream
         isStreaming = false;
-        if (markdownUpdateTimeoutId) clearTimeout(markdownUpdateTimeoutId);
-    } finally {
-        if (!isStreaming) { showLoading(false); }
+        currentAssistantMessageElement = null;
+        currentAssistantContentElement = null;
+        accumulatedResponseForMarkdown = '';
+        showLoading(false);
+        if (markdownUpdateTimeoutId) { clearTimeout(markdownUpdateTimeoutId); markdownUpdateTimeoutId = null; } // Clear any pending markdown updates
     }
+    // Removed finally block as showLoading is handled by finalizeAssistantMessage or error handler
 }
 
 // --- File Viewer Functions ---
@@ -235,8 +398,16 @@ async function viewFile(filename) {
             // Auto-Resize Logic
             requestAnimationFrame(() => {
                 try {
-                    const contentScrollWidth = fileViewerContent.scrollWidth; const currentViewerWidth = fileViewer.offsetWidth; const styles = getComputedStyle(fileViewerContent); const internalPadding = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight); const scrollbarWidth = fileViewerContent.offsetWidth - fileViewerContent.clientWidth - (parseFloat(styles.borderLeftWidth) || 0) - (parseFloat(styles.borderRightWidth) || 0); const buffer = 40; let targetWidth = contentScrollWidth + internalPadding + scrollbarWidth + buffer; const sideMenu = document.getElementById('side-menu'); const sideMenuWidth = sideMenu ? sideMenu.offsetWidth : 0; const minMainWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-main-view-width')) || 400; const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--resize-gap')) || 15; const maxWidth = window.innerWidth - sideMenuWidth - minMainWidth - gap; const minWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--viewer-min-width')) || 300; targetWidth = Math.max(minWidth, Math.min(targetWidth, maxWidth)); const defaultMinWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--viewer-default-width').match(/clamp\(([^,]+)/)?.[1] || '300px');
-                    if (targetWidth > currentViewerWidth || targetWidth < defaultMinWidth) { fileViewer.style.transition = 'none'; fileViewer.style.width = `${targetWidth}px`; fileViewer.offsetHeight; fileViewer.style.transition = ''; }
+                    const contentScrollWidth = fileViewerContent.scrollWidth; const currentViewerWidth = fileViewer.offsetWidth; const styles = getComputedStyle(fileViewerContent); const internalPadding = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight); const scrollbarWidth = fileViewerContent.offsetWidth - fileViewerContent.clientWidth - (parseFloat(styles.borderLeftWidth) || 0) - (parseFloat(styles.borderRightWidth) || 0); const buffer = 40; let targetWidth = contentScrollWidth + internalPadding + scrollbarWidth + buffer; const sideMenu = document.getElementById('side-menu'); const sideMenuWidth = sideMenu ? sideMenu.offsetWidth : 0; const minMainWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-main-view-width')) || 400; const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--resize-gap')) || 15; const maxWidth = window.innerWidth - sideMenuWidth - minMainWidth - gap; const minWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--viewer-min-width')) || 300; targetWidth = Math.max(minWidth, Math.min(targetWidth, maxWidth));
+                    // CORRECTED: Access the captured group from the regex match
+                    const defaultMinWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--viewer-default-width').match(/clamp\(([^,]+)\)/)?.[1] || '300px');
+                    // Only resize if needed, avoid transition flicker
+                    if (Math.abs(targetWidth - currentViewerWidth) > 2) {
+                       fileViewer.style.transition = 'none'; // Disable transition during resize
+                       fileViewer.style.width = `${targetWidth}px`;
+                       fileViewer.offsetHeight; // Force reflow
+                       fileViewer.style.transition = ''; // Re-enable transition
+                    }
                 } catch (measureError) { console.error("Error during viewer auto-resize measurement:", measureError); }
             });
             fileViewerContent.scrollTop = 0; // Scroll to top
@@ -300,4 +471,15 @@ function initializeChat() {
     if(closeViewerBtn) closeViewerBtn.addEventListener('click', closeViewer);
     if (viewerResizer) { viewerResizer.addEventListener('mousedown', startResizeViewer); }
     else { console.warn("Viewer resizer element not found."); }
+
+    // Initialize marked - Ensure it's loaded
+    if (typeof marked !== 'undefined') {
+       marked.setOptions({
+           breaks: true, // Convert single line breaks to <br>
+           gfm: true,    // Enable GitHub Flavored Markdown
+       });
+       console.log("Marked.js initialized.");
+    } else {
+       console.error("Marked.js library not loaded.");
+    }
 }

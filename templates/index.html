@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CRM Training Assistant</title>
+    <title>AI Training Assistant</title>
     <!-- Link to CSS files -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}"> <!-- Base Styles -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}"> <!-- Chat Styles -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/crm.css') }}">  <!-- CRM Styles -->
+    <!-- REMOVED CRM CSS Link -->
     <!-- External JS Libraries (Load Before App Scripts) -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
@@ -24,16 +24,24 @@
             <!-- App Navigation Buttons -->
             <div class="menu-section">
                  <button id="show-chat-btn" class="menu-nav-button active">Chat Assistant</button>
-                 <button id="show-crm-btn" class="menu-nav-button">CRM Interface</button>
+                 <!-- REMOVED CRM Interface Button -->
             </div>
-            <!-- CRM Record Type Navigation -->
+            <!-- Profile Selection -->
             <div class="menu-section">
-                <h3 class="menu-section-title">CRM Data</h3>
-                <button id="nav-contacts-btn" class="menu-nav-button">Contacts</button>
-                <button id="nav-support-items-btn" class="menu-nav-button">Support Items</button>
-                <button id="nav-cases-btn" class="menu-nav-button">Cases</button>
-                <button id="nav-claim-items-btn" class="menu-nav-button">Claim Items</button>
+                <h3 class="menu-section-title">AI Profile</h3>
+                <select id="profile-select" class="menu-select">
+                    <!-- Options populated by JS -->
+                </select>
+                <!-- New container for profile guides -->
+                <div id="profile-guides-list-container">
+                    <h4 class="menu-subsection-title">Available Guides:</h4>
+                    <ul id="profile-guides-list">
+                        <!-- Guide links populated by JS -->
+                        <li class="muted">Select a profile</li>
+                    </ul>
+                </div>
             </div>
+            <!-- REMOVED CRM Record Type Navigation -->
             <!-- Theme Circles Section -->
             <div class="menu-section">
                 <h3 class="menu-section-title">Theme</h3>
@@ -45,12 +53,12 @@
 
         <!-- Chat View Container -->
         <div id="chat-interface-view" class="main-view">
-             <div class="header"><h1>CRM Training Assistant</h1></div>
+             <div class="header"><h1>AI Training Assistant</h1></div>
              <div class="main-content">
                 <div class="chat-panel">
                     <div id="chatbox">
                          <div class="assistant-message message">
-                           <div class="message-content">Hello! Ask me about the CRM or click a source link to view the guide. Supports .txt, .md, and .docx files.</div>
+                           <div class="message-content">Hello! Ask me a question or click a source link to view the guide. Supports .txt, .md, and .docx files.</div>
                         </div>
                     </div>
                     <div id="input-area">
@@ -61,64 +69,7 @@
             </div>
         </div> <!-- End Chat View -->
 
-        <!-- CRM Interface View Container -->
-        <div id="crm-interface-view" class="main-view view-hidden">
-             <div class="crm-header">
-                 <h1 id="crm-view-title">CRM Dashboard</h1>
-             </div>
-             <div class="crm-content">
-                 <!-- List View -->
-                 <div id="crm-list-view" class="crm-view-section view-hidden">
-                     <div class="list-header">
-                         <h2 id="crm-list-title">Records</h2>
-                         <button id="crm-new-record-btn" class="btn-new view-hidden">New Record</button>
-                     </div>
-                     <div id="crm-record-list-container">
-                         <p class="muted">Select a record type from the menu.</p>
-                     </div>
-                 </div>
-                 <!-- Detail/Edit View -->
-                 <div id="crm-detail-view" class="crm-view-section view-hidden" data-mode="view">
-                      <h2 id="crm-detail-title">Record Details</h2>
-                      <form id="crm-detail-form">
-                           <!-- Field content injected here -->
-                           <div id="crm-detail-content"></div>
-
-                           <!-- Placeholder for Create Related Button -->
-                           <div id="create-related-button-container" class="create-related-container view-hidden">
-                               <!-- Button injected by crm.js -->
-                           </div>
-
-                           <!-- Placeholder for Related Records List -->
-                           <div id="related-records-container" class="related-records-container view-hidden">
-                               <h3 id="related-records-title">Related Records</h3>
-                               <div id="related-records-list">
-                                   <!-- List injected by crm.js -->
-                               </div>
-                           </div>
-
-                           <!-- Action Buttons -->
-                           <div class="detail-actions">
-                               <button type="button" id="crm-back-btn" class="btn-secondary">Back to List</button>
-                               <button type="button" id="crm-edit-btn" class="btn-secondary">Edit</button>
-                               <button type="submit" id="crm-save-btn" class="btn-primary view-hidden">Save</button>
-                               <button type="button" id="crm-cancel-btn" class="btn-secondary view-hidden">Cancel</button>
-                               <button type="button" id="crm-delete-btn" class="btn-danger">Delete</button>
-                           </div>
-                      </form>
-                 </div>
-                 <!-- Dashboard View -->
-                 <div id="crm-dashboard-view" class="crm-view-section">
-                      <h2>Overview</h2>
-                      <div class="crm-grid">
-                          <div class="crm-card"><h3>Active Leads</h3><p style="font-size: 2em; font-weight: bold; color: var(--accent-color);">15</p><p class="muted">+2 since yesterday</p></div>
-                          <div class="crm-card"><h3>Deals Closing</h3><p style="font-size: 2em; font-weight: bold; color: var(--accent-color);">$ 45,000</p><p class="muted">In 8 deals</p></div>
-                          <div class="crm-card"><h3>Recent Activity</h3><p>Call logged with John Doe</p><p>Email sent to Jane Smith</p><p class="muted">View All...</p></div>
-                          <div class="crm-card"><h3>Tasks Due</h3><p>Follow up with Acme Corp</p><p>Prepare proposal for Globex</p><p class="muted">3 more...</p></div>
-                      </div>
-                 </div>
-             </div>
-        </div> <!-- End CRM View -->
+        <!-- REMOVED CRM Interface View Container -->
 
     </div> <!-- End App Container -->
 
@@ -137,11 +88,14 @@
         // Pass Flask data to global JS scope BEFORE loading script.js
         const embeddedThemesData = {{ themes_json | safe }} || {};
         const embeddedDefaultThemeName = '{{ default_theme_name }}' || 'default';
+        const embeddedProfilesData = {{ profiles_json | safe }} || {}; // Pass profiles data
+        const embeddedDefaultProfileKey = '{{ default_profile_key }}' || 'default'; // Pass default profile key
+        const embeddedAllGuides = {{ all_guides_json | safe }} || []; // Pass all loaded guides
     </script>
 
     <!-- Link to external JavaScript files (Order Matters!) -->
     <script src="{{ url_for('static', filename='js/script.js') }}"></script> <!-- Base/Shared JS -->
-    <script src="{{ url_for('static', filename='js/crm.js') }}"></script>    <!-- CRM Logic -->
+    <!-- REMOVED CRM JS Link -->
     <script src="{{ url_for('static', filename='js/chat.js') }}"></script>   <!-- Chat/Viewer Logic -->
 
 
