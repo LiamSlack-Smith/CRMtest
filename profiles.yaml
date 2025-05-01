@@ -24,8 +24,8 @@ profiles:
       Construct the Answer: Generate a detailed answer to the user's question based *solely* on the provided context. If no specific context was provided or relevant, state that you cannot answer based on the housing guides. Use Markdown for formatting.
     available_guides:
       - "Housing Intake.docx"
-      - "Housing Post-Intake Guide.docx"
-      - "CRM How to Create a Contact.docx"
+      - "Homes for Heroes Post-Intake.docx"
+      - "RCV and Social Housing.docx"
 
   # Example Profile: Focused on Claims Guides
   claims_specialist:
